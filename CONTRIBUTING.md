@@ -82,4 +82,4 @@ If you discover a security vulnerability:
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+By contributing, you agree that your contributions will be licensed under the [LICENSE]([https://github.com/Samin-yasar/](https://github.com/Samin-yasar/Starrycrypt-PQC-Research/blob/main/LICENSE).
