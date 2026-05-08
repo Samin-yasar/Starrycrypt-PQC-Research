@@ -17,8 +17,8 @@ StarryCrypt-PQC implements **ML-KEM-768** (FIPS 203) with **X25519 hybrid key ex
 
 - 🔐 **FIPS 203 Compliant**: NIST-standardized ML-KEM-768 implementation
 - 🔄 **Hybrid Key Exchange**: ML-KEM-768 + X25519 with HKDF-SHA-256
-- ⚡ **WASM Optimization**: 2.03× speedup over pure JavaScript
-- 📊 **Statistical Rigor**: 464 benchmark sessions across 22 hardware configurations
+- ⚡ **WASM Optimization**: 2.99× speedup over pure JavaScript
+- 📊 **Statistical Rigor**: 462 benchmark sessions across 22 hardware configurations
 - 🧪 **Constant-Time Testing**: Browser-native Welch's t-test harness
 - 📱 **Cross-Platform**: WebKit, Blink, Gecko support
 
@@ -147,11 +147,11 @@ python3 ../verify_stats.py
 
 | Implementation | Mean Latency | Median | Speedup |
 |-----------------|--------------|--------|---------|
-| WASM (all) | 3.97 ms | 1.28 ms | **2.03×** |
-| WASM (SIMD-capable) | 2.38 ms | 0.72 ms | 3.39× |
-| Pure JavaScript | 8.07 ms | 4.37 ms | baseline |
+| WASM (all) | 2.34 ms | 1.28 ms | **2.99×** |
+| WASM (SIMD-capable) | 2.38 ms | 0.72 ms | 2.94× |
+| Pure JavaScript | 6.99 ms | 4.37 ms | baseline |
 
-**Key Finding**: WASM delivers 2.03× speedup over pure JS, with modern SIMD-capable browsers achieving sub-2.5ms latency.
+**Key Finding**: WASM delivers 2.99× speedup over pure JS, with modern SIMD-capable browsers achieving sub-2.5ms latency.
 
 ## Constant-Time Testing
 
@@ -202,8 +202,8 @@ If you use this code or data in your research, please cite:
 
 The repository includes our complete benchmark dataset (`data/starrycrypt_telemetry_2026-05-05.csv`):
 
-- **464 total sessions**: 241 WASM, 223 pure JS
-- **309 lab sessions**: Controlled synthetic runs (BrowserStack)
+- **462 total sessions**: 240 WASM, 222 pure JS
+- **307 lab sessions**: Controlled synthetic runs (BrowserStack)
 - **155 field sessions**: Organic user benchmarks
 - **22 hardware configurations**: Budget to flagship devices
 - **3 browser engines**: WebKit, Blink, Gecko

@@ -11,7 +11,7 @@ All notable changes to this project will be documented in this file.
 - Pure JavaScript implementation for comparison
 - Browser-native constant-time testing harness (Welch's t-test)
 - Comprehensive telemetry system for performance benchmarking
-- 464-session benchmark dataset across 22 hardware configurations
+- 462-session benchmark dataset across 22 hardware configurations
 - 8 publication-quality figures
 - IACR ePrint submission ready
 
