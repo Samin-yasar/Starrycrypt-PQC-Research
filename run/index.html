@@ -1,0 +1,1232 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description"
+    content="Browser benchmark for FIPS 203 ML-KEM-768 + X25519 hybrid post-quantum key exchange with statistical sampling.">
+  <title>ML-KEM-768 (FIPS 203) + X25519 Hybrid Benchmark</title>
+  <link rel="stylesheet" href="../src/assets/fonts/fonts.css">
+  <style>
+    :root {
+      --bg: #06080f;
+      --fg: #e0e6f0;
+      --accent: #4cc9f0;
+      --accent2: #a78bfa;
+      --ok: #80ed99;
+      --warn: #f4a261;
+      --dim: rgba(255, 255, 255, .45);
+      --glass: rgba(255, 255, 255, .03);
+      --glass-border: rgba(255, 255, 255, .07);
+      --glow: rgba(76, 201, 240, .15);
+    }
+
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.6;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    #particleCanvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .page-wrapper {
+      position: relative;
+      z-index: 1;
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 3rem 2rem 2rem;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────────── */
+    .hero {
+      text-align: center;
+      margin-bottom: 2.5rem;
+      animation: fadeUp .8s ease-out;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: linear-gradient(135deg, rgba(76, 201, 240, .12), rgba(167, 139, 250, .12));
+      border: 1px solid rgba(76, 201, 240, .2);
+      border-radius: 999px;
+      padding: .35rem 1rem;
+      font-size: .75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--accent);
+      margin-bottom: 1.2rem;
+    }
+
+    .hero-badge::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      background: var(--accent);
+      border-radius: 50%;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    .hero h1 {
+      font-size: clamp(1.4rem, 4vw, 2rem);
+      font-weight: 800;
+      background: linear-gradient(135deg, #fff 0%, var(--accent) 50%, var(--accent2) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      line-height: 1.3;
+      margin-bottom: .6rem;
+    }
+
+    .hero .subtitle {
+      font-size: .9rem;
+      color: var(--dim);
+      max-width: 600px;
+      margin: 0 auto;
+      line-height: 1.6;
+    }
+
+    .hero .subtitle code {
+      background: rgba(76, 201, 240, .1);
+      color: var(--accent);
+      padding: .1rem .4rem;
+      border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .8rem;
+    }
+
+    /* ── Controls ───────────────────────────────────────────────────────── */
+    .controls-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 2rem;
+      animation: fadeUp .8s ease-out .15s both;
+    }
+
+    .run-btn {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #07101a;
+      border: none;
+      padding: .75rem 2rem;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: .95rem;
+      cursor: pointer;
+      transition: all .3s ease;
+      box-shadow: 0 4px 20px rgba(76, 201, 240, .25);
+      font-family: inherit;
+    }
+
+    .run-btn:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(76, 201, 240, .35);
+      filter: brightness(1.1);
+    }
+
+    .run-btn:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .iter-select {
+      background: var(--glass);
+      color: var(--fg);
+      border: 1px solid var(--glass-border);
+      padding: .65rem 1rem;
+      border-radius: 10px;
+      font-size: .9rem;
+      font-family: inherit;
+      cursor: pointer;
+      transition: border-color .2s;
+    }
+
+    .iter-select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .iter-label {
+      font-size: .85rem;
+      color: var(--dim);
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+
+    /* ── Toggle Switch ──────────────────────────────────────────────────── */
+    .impl-toggle-wrapper {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 2rem;
+      animation: fadeUp .8s ease-out;
+    }
+
+    .impl-toggle {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;
+      padding: .4rem;
+      position: relative;
+    }
+
+    .impl-toggle a {
+      background: transparent;
+      border: none;
+      color: var(--dim);
+      padding: .5rem 1rem;
+      border-radius: 8px;
+      font-size: .85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .2s ease;
+      font-family: inherit;
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+      text-decoration: none;
+    }
+
+    .impl-toggle a.active {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #07101a;
+      box-shadow: 0 2px 12px rgba(76, 201, 240, .3);
+    }
+
+    .impl-toggle a:not(.active):hover {
+      color: var(--fg);
+      background: rgba(255, 255, 255, .05);
+    }
+
+    .impl-toggle svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    /* ── Cards ──────────────────────────────────────────────────────────── */
+    .card {
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1rem;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      animation: fadeUp .5s ease-out both;
+      transition: border-color .3s ease;
+    }
+
+    .card:hover {
+      border-color: rgba(76, 201, 240, .15);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      margin-bottom: .8rem;
+      font-weight: 700;
+      font-size: .95rem;
+      color: var(--fg);
+    }
+
+    .card-header .icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .card-header .icon svg {
+      width: 16px;
+      height: 16px;
+      stroke: currentColor;
+      stroke-width: 2;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .card-header .icon.hw {
+      background: rgba(76, 201, 240, .12);
+      color: var(--accent);
+    }
+
+    .card-header .icon.time {
+      background: rgba(128, 237, 153, .12);
+      color: var(--ok);
+    }
+
+    .card-header .icon.size {
+      background: rgba(244, 162, 97, .12);
+      color: var(--warn);
+    }
+
+    .card-header .icon.json {
+      background: rgba(167, 139, 250, .12);
+      color: var(--accent2);
+    }
+
+    .status-card {
+      text-align: center;
+      padding: 1.5rem;
+      font-weight: 500;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .status-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      animation: shimmer 2s ease-in-out infinite;
+      background-size: 200% 100%;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: .6rem;
+    }
+
+    .kv {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      font-size: .88rem;
+      padding: .45rem .6rem;
+      border-radius: 8px;
+      transition: background .2s;
+    }
+
+    .kv:hover {
+      background: rgba(255, 255, 255, .02);
+    }
+
+    .kv span:first-child {
+      color: var(--dim);
+      font-weight: 500;
+    }
+
+    .kv span:last-child {
+      font-variant-numeric: tabular-nums;
+      color: var(--accent);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .82rem;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: .2rem .55rem;
+      border-radius: 6px;
+      background: rgba(128, 237, 153, .1);
+      color: var(--ok);
+      font-size: .72rem;
+      font-weight: 700;
+      letter-spacing: .3px;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .badge-fail {
+      background: rgba(255, 107, 107, .12);
+      color: #ff6b6b;
+    }
+
+    .stat-detail {
+      font-size: .7rem;
+      color: var(--dim);
+      margin-left: .2rem;
+    }
+
+    pre {
+      white-space: pre-wrap;
+      word-break: break-all;
+      font-size: .78rem;
+      font-family: 'JetBrains Mono', monospace;
+      opacity: .85;
+      background: rgba(0, 0, 0, .3);
+      padding: 1rem;
+      border-radius: 10px;
+      max-height: 400px;
+      overflow-y: auto;
+      border: 1px solid var(--glass-border);
+    }
+
+    .error {
+      color: #ff6b6b;
+    }
+
+    /* ── Privacy Notice ─────────────────────────────────────────────────── */
+    .privacy-notice {
+      margin-top: 3rem;
+      padding: 0;
+      background: linear-gradient(135deg, rgba(76, 201, 240, .04), rgba(167, 139, 250, .04));
+      border: 1px solid rgba(76, 201, 240, .1);
+      border-radius: 16px;
+      animation: fadeUp .8s ease-out .6s both;
+      overflow: hidden;
+    }
+
+    .privacy-header {
+      display: flex;
+      align-items: center;
+      gap: .8rem;
+      padding: 1.2rem 1.5rem;
+      cursor: pointer;
+      user-select: none;
+      transition: all .3s ease;
+      background: rgba(255, 255, 255, .02);
+      position: relative;
+      z-index: 2;
+      font-weight: 700;
+      font-size: .85rem;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      color: var(--accent);
+    }
+
+    .privacy-header * {
+      pointer-events: none;
+    }
+
+    .privacy-header:hover {
+      background: rgba(76, 201, 240, .05);
+    }
+
+    .privacy-header svg.lock-icon {
+      width: 16px;
+      height: 16px;
+      stroke: var(--accent);
+      flex-shrink: 0;
+    }
+
+    .privacy-chevron {
+      margin-left: auto;
+      width: 14px;
+      height: 14px;
+      stroke: var(--accent);
+      flex-shrink: 0;
+      transition: transform .35s cubic-bezier(.4, 0, .2, 1);
+      opacity: .7;
+    }
+
+    .privacy-notice.open .privacy-chevron {
+      transform: rotate(180deg);
+    }
+
+    .privacy-notice.open .privacy-header {
+      border-radius: 16px 16px 0 0;
+      border-bottom: 1px solid rgba(76, 201, 240, .07);
+    }
+
+    /* Smooth height collapse via grid trick */
+    .privacy-collapse {
+      display: grid;
+      grid-template-rows: 0fr;
+      transition: grid-template-rows .38s cubic-bezier(.4, 0, .2, 1);
+    }
+
+    .privacy-notice.open .privacy-collapse {
+      grid-template-rows: 1fr;
+    }
+
+    .privacy-collapse-inner {
+      overflow: hidden;
+    }
+
+    .privacy-body {
+      font-size: .78rem;
+      color: var(--dim);
+      line-height: 1.8;
+      padding: 1.2rem 1.5rem 1.5rem;
+    }
+
+    .privacy-body p {
+      margin-bottom: .6rem;
+    }
+
+    .privacy-body strong {
+      color: rgba(255, 255, 255, .7);
+    }
+
+    .privacy-body ul {
+      list-style: none;
+      padding: 0;
+      margin: .6rem 0;
+    }
+
+    .privacy-body ul li {
+      padding-left: 1.2rem;
+      position: relative;
+      margin-bottom: .3rem;
+    }
+
+    .privacy-body ul li::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      width: 12px;
+      height: 12px;
+      background: var(--ok);
+      mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E") center/contain no-repeat;
+      -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E") center/contain no-repeat;
+    }
+
+    .privacy-body .legal-ref {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .72rem;
+      color: rgba(255, 255, 255, .3);
+      margin-top: .8rem;
+      padding-top: .8rem;
+      border-top: 1px solid rgba(255, 255, 255, .05);
+    }
+
+    /* ── Animations ─────────────────────────────────────────────────────── */
+    @keyframes fadeUp {
+      from {
+        opacity: 0;
+        transform: translateY(16px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+
+      50% {
+        opacity: .4;
+        transform: scale(.8);
+      }
+    }
+
+    @keyframes shimmer {
+      0% {
+        background-position: -200% 0;
+      }
+
+      100% {
+        background-position: 200% 0;
+      }
+    }
+
+    /* ── Scrollbar ──────────────────────────────────────────────────────── */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: rgba(76, 201, 240, .3);
+      border-radius: 3px;
+    }
+
+    /* ── Hint Arrow ────────────────────────────────────────────────────── */
+    .pointer-hint {
+      position: absolute;
+      top: 100%;
+      left: 75%;
+      transform: translateX(-50%) translateY(10px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      color: var(--accent2);
+      font-size: 0.65rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+      z-index: 100;
+      filter: drop-shadow(0 0 10px rgba(167, 139, 250, 0.4));
+    }
+
+    .pointer-hint.visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(18px);
+    }
+
+    .pointer-hint svg {
+      width: 18px;
+      height: 18px;
+      stroke: currentColor;
+      stroke-width: 3;
+      fill: none;
+      animation: hintBounce 1.5s infinite;
+    }
+
+    @keyframes hintBounce {
+
+      0%,
+      100% {
+        transform: translateY(0);
+      }
+
+      50% {
+        transform: translateY(-6px);
+      }
+    }
+
+    /* ── Chalk Transition Overlay ──────────────────────────────────────── */
+    #chalkOverlayCanvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 99999;
+      pointer-events: all;
+      display: none;
+    }
+
+    /* ── Responsive ─────────────────────────────────────────────────────── */
+    @media (max-width: 600px) {
+      .page-wrapper {
+        padding: 2rem 1rem 1.5rem;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .kv {
+        font-size: .82rem;
+      }
+
+      .privacy-notice {
+        padding: 1.2rem 1.2rem;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Particle background (purely decorative, zero impact on benchmarks) -->
+  <canvas id="particleCanvas"></canvas>
+
+  <div class="page-wrapper">
+
+    <!-- Toggle Top Bar -->
+    <div class="impl-toggle-wrapper">
+      <div class="impl-toggle">
+        <a href="index.html" class="active">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+            <line x1="8" y1="21" x2="16" y2="21"></line>
+            <line x1="12" y1="17" x2="12" y2="21"></line>
+          </svg>
+          WASM
+        </a>
+        <a href="pure-js.html" id="pureJsToggle"
+          onclick="event.preventDefault(); playChalkTransition('pure-js.html' + window.location.search)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+          Pure JS
+        </a>
+        <div id="hintArrow" class="pointer-hint">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 19V5M5 12l7-7 7 7" />
+          </svg>
+          <span>Compare Pure JS</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hero -->
+    <div class="hero">
+      <div class="hero-badge">FIPS 203 Compliant · WASM Implementation</div>
+      <h1>ML-KEM-768 + X25519 Hybrid Benchmark</h1>
+      <p class="subtitle">
+        Statistical performance evaluation of post-quantum hybrid key exchange.
+        <code>WASM</code> lattice math · <code>Web Crypto API</code> · <code>HKDF-SHA-256</code> ·
+        <code>AES-256-GCM</code>
+      </p>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls-bar">
+
+      <button class="run-btn" id="runBtn">
+        <svg viewBox="0 0 24 24" fill="currentColor"
+          style="width:14px;height:14px;margin-right:6px;vertical-align:middle;">
+          <path d="M8 5v14l11-7z"></path>
+        </svg>
+        Run Benchmark
+      </button>
+    </div>
+
+    <!-- Status -->
+    <div id="status" class="card status-card" style="display:none"></div>
+
+    <!-- Hardware -->
+    <div id="hardware" class="card" style="display:none">
+      <div class="card-header">
+        <span class="icon hw">
+          <svg viewBox="0 0 24 24">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+            <line x1="8" y1="21" x2="16" y2="21"></line>
+            <line x1="12" y1="17" x2="12" y2="21"></line>
+          </svg>
+        </span>
+        Hardware &amp; Environment
+      </div>
+      <div class="grid" id="hwGrid"></div>
+    </div>
+
+    <!-- Timings -->
+    <div id="timings" class="card" style="display:none">
+      <div class="card-header">
+        <span class="icon time">
+          <svg viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+        </span>
+        Timings — mean ± σ (ms)
+      </div>
+      <div class="grid" id="timeGrid"></div>
+    </div>
+
+    <!-- Sizes -->
+    <div id="sizes" class="card" style="display:none">
+      <div class="card-header">
+        <span class="icon size">
+          <svg viewBox="0 0 24 24">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="9" y1="9" x2="15" y2="15"></line>
+            <line x1="15" y1="9" x2="9" y2="15"></line>
+          </svg>
+        </span>
+        Artifact Sizes (bytes)
+      </div>
+      <div class="grid" id="sizeGrid"></div>
+    </div>
+
+    <!-- JSON Output -->
+    <div id="jsonOut" class="card" style="display:none">
+      <div class="card-header">
+        <span class="icon json">
+          <svg viewBox="0 0 24 24">
+            <polyline points="16 18 22 12 16 6"></polyline>
+            <polyline points="8 6 2 12 8 18"></polyline>
+          </svg>
+        </span>
+        Raw JSON Output
+      </div>
+      <pre id="jsonPre"></pre>
+    </div>
+
+    <!-- Privacy & Data Use Notice -->
+    <div class="privacy-notice" id="privacyNotice">
+      <div class="privacy-header" id="privacyToggle" role="button" aria-expanded="false"
+        aria-controls="privacyCollapse">
+        <svg class="lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+          stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+        </svg>
+        Data Use &amp; Privacy Notice
+        <svg class="privacy-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+          stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </div>
+      <div class="privacy-collapse" id="privacyCollapse">
+        <div class="privacy-collapse-inner">
+          <div class="privacy-body">
+            <p>
+              <strong>Purpose of Collection.</strong> The performance telemetry generated by this benchmark is collected
+              <strong>solely and exclusively</strong> for non-commercial academic research purposes. All data is used to
+              advance the scientific understanding of post-quantum cryptographic performance characteristics across
+              heterogeneous web environments, in support of academic research and future manuscript submission.
+            </p>
+            <p><strong>Non-Identifiability Guarantee.</strong> This instrument does <strong>not</strong> collect,
+              transmit,
+              or store any personally identifiable information (PII). Specifically:</p>
+            <ul>
+              <li>No IP addresses are logged, stored, or transmitted to the research database</li>
+              <li>No geolocation, cookies, fingerprinting tokens, or tracking identifiers are used</li>
+              <li>No user accounts, session tokens, or cross-site identifiers are generated</li>
+              <li>Hardware metadata is limited to coarse-grained, non-unique device class descriptors
+                (e.g., logical core count, RAM tier) that cannot be used to re-identify individual participants</li>
+            </ul>
+            <p>
+              <strong>Data Minimisation.</strong> Only aggregate statistical measures (mean, standard deviation,
+              percentiles)
+              and categorical device-class metadata are retained. Raw per-iteration timing arrays are reduced
+              server-side
+              and
+              are not individually attributable to any natural person or device.
+            </p>
+            <p>
+              <strong>Voluntary Participation.</strong> By executing this benchmark, you voluntarily contribute
+              anonymised
+              performance data to an open research dataset. No consent withdrawal mechanism is required because the
+              data,
+              once submitted, is inherently non-identifiable and cannot be linked back to any individual under any
+              reasonable means available to the research team.
+            </p>
+            <p class="legal-ref">
+              Compliance Standards: GDPR Art. 26 Recital 26 (Anonymous Data); IEEE P2830 (Benchmarking Transparency);
+              NIST SP 800-188 (De-identification). Principal Investigator: Samin Yasar · StarryCrypt-PQC Research
+              Project (Preprint Stage).
+            </p>
+          </div><!-- .privacy-body -->
+        </div><!-- .privacy-collapse-inner -->
+      </div><!-- .privacy-collapse -->
+    </div><!-- .privacy-notice -->
+
+  </div><!-- .page-wrapper -->
+
+  <!-- ── Particle Animation (decorative only — runs on separate canvas, zero benchmark impact) ── -->
+  <script>
+    (function () {
+      const canvas = document.getElementById('particleCanvas');
+      const ctx = canvas.getContext('2d');
+      let particles = [];
+      let w, h, animId;
+
+      function resize() {
+        w = canvas.width = window.innerWidth;
+        h = canvas.height = window.innerHeight;
+      }
+
+      function createParticles() {
+        particles = [];
+        const count = Math.min(Math.floor((w * h) / 18000), 80);
+        for (let i = 0; i < count; i++) {
+          particles.push({
+            x: Math.random() * w,
+            y: Math.random() * h,
+            vx: (Math.random() - 0.5) * 0.3,
+            vy: (Math.random() - 0.5) * 0.3,
+            r: Math.random() * 1.5 + 0.5,
+            alpha: Math.random() * 0.3 + 0.05
+          });
+        }
+      }
+
+      function draw() {
+        ctx.clearRect(0, 0, w, h);
+        for (const p of particles) {
+          p.x += p.vx;
+          p.y += p.vy;
+          if (p.x < 0) p.x = w;
+          if (p.x > w) p.x = 0;
+          if (p.y < 0) p.y = h;
+          if (p.y > h) p.y = 0;
+
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(76, 201, 240, ${p.alpha})`;
+          ctx.fill();
+        }
+
+        // Draw faint connecting lines
+        for (let i = 0; i < particles.length; i++) {
+          for (let j = i + 1; j < particles.length; j++) {
+            const dx = particles[i].x - particles[j].x;
+            const dy = particles[i].y - particles[j].y;
+            const dist = dx * dx + dy * dy;
+            if (dist < 22000) {
+              ctx.beginPath();
+              ctx.moveTo(particles[i].x, particles[i].y);
+              ctx.lineTo(particles[j].x, particles[j].y);
+              ctx.strokeStyle = `rgba(76, 201, 240, ${0.04 * (1 - dist / 22000)})`;
+              ctx.lineWidth = 0.5;
+              ctx.stroke();
+            }
+          }
+        }
+        animId = requestAnimationFrame(draw);
+      }
+
+      resize();
+      createParticles();
+      draw();
+      window.addEventListener('resize', () => { resize(); createParticles(); });
+    })();
+  </script>
+
+  <!-- Chalk Overlay Canvas -->
+  <canvas id="chalkOverlayCanvas"></canvas>
+
+  <!-- ── Chalk Spiral Transition (Unified: white chalk on blackboard, horizontal sweep) ── -->
+  <script>
+    function playChalkTransition(href) {
+      const canvas = document.getElementById('chalkOverlayCanvas');
+      const ctx = canvas.getContext('2d');
+
+      const W = canvas.width = window.innerWidth;
+      const H = canvas.height = window.innerHeight;
+      canvas.style.display = 'block';
+
+      /* ── Path: horizontal sinusoidal coil sweeping left → right ── */
+      const CYCLES = 4.0;
+      const AMPLITUDE = H * 0.38;
+      const N = 800;
+
+      const path = [];
+      for (let i = 0; i <= N; i++) {
+        const t = i / N;
+        const x = -100 + t * (W + 200);
+        /* amplitude narrows slightly toward the end for a tapering whip effect */
+        const amp = AMPLITUDE * (0.7 + 0.3 * Math.cos(t * Math.PI * 0.5));
+        const y = H / 2 + Math.sin(t * 2 * Math.PI * CYCLES) * amp;
+        path.push({
+          x, y,
+          /* pre-baked per-layer jitter — stable between frames */
+          j: [
+            (Math.random() - 0.5) * 3.2,
+            (Math.random() - 0.5) * 2.0,
+            (Math.random() - 0.5) * 1.2,
+            (Math.random() - 0.5) * 0.7,
+            (Math.random() - 0.5) * 0.35
+          ]
+        });
+      }
+
+      /* ── Chalk layers: outermost diffuse halo → crisp core ── */
+      const LAYERS = [
+        { w: 28, a: 0.04, ji: 0 },
+        { w: 16, a: 0.10, ji: 1 },
+        { w: 9, a: 0.24, ji: 2 },
+        { w: 4.5, a: 0.52, ji: 3 },
+        { w: 1.8, a: 0.82, ji: 4 },
+      ];
+
+      function drawChalk(pts) {
+        if (pts.length < 2) return;
+        for (const L of LAYERS) {
+          ctx.beginPath();
+          ctx.moveTo(pts[0].x, pts[0].y + pts[0].j[L.ji]);
+          for (let i = 1; i < pts.length; i++) {
+            ctx.lineTo(pts[i].x, pts[i].y + pts[i].j[L.ji]);
+          }
+          ctx.strokeStyle = `rgba(255,255,255,${L.a})`;
+          ctx.lineWidth = L.w;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.shadowColor = 'rgba(255,255,255,0.22)';
+          ctx.shadowBlur = L.w * 1.1;
+          ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+      }
+
+      /* ── Chalk-dust particles that trail the tip ── */
+      const DUST = Array.from({ length: 160 }, () => ({
+        t: Math.random(),
+        dy: (Math.random() - 0.5) * 50,
+        r: Math.random() * 2.8 + 0.5,
+        a: Math.random() * 0.30 + 0.06,
+        vx: (Math.random() - 0.5) * 0.7,
+        vy: (Math.random() - 0.85) * 1.1,
+        age: 0
+      }));
+
+      function drawDust(progress) {
+        for (const d of DUST) {
+          if (d.t > progress) continue;
+          const idx = Math.min(Math.floor(d.t * N), N);
+          const px = path[idx].x + d.vx * d.age * 14;
+          const py = path[idx].y + d.dy + d.vy * d.age * 14;
+          const fade = Math.max(0, 1 - d.age / 48);
+          ctx.beginPath();
+          ctx.arc(px, py, d.r * (0.5 + 0.5 * fade), 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(255,255,255,${d.a * fade})`;
+          ctx.fill();
+          d.age++;
+        }
+      }
+
+      /* ── Animation loop ── */
+      const DRAW_MS = 980;   /* drawing phase */
+      const HOLD_MS = 220;   /* pause at full spiral */
+      const FLASH_MS = 420;   /* white flash before nav */
+      let startTs = null;
+      let phase = 'draw';     /* 'draw' | 'hold' | 'flash' */
+      let holdTs = null;
+      let flashTs = null;
+
+      requestAnimationFrame(function tick(ts) {
+        if (!startTs) startTs = ts;
+
+        if (phase === 'draw') {
+          const progress = Math.min((ts - startTs) / DRAW_MS, 1);
+          const endIdx = Math.floor(progress * N);
+
+          ctx.clearRect(0, 0, W, H);
+
+          /* Blackboard: fully opaque dark fill — completely hides all page content */
+          ctx.fillStyle = `rgba(4,5,12,1.0)`;
+          ctx.fillRect(0, 0, W, H);
+
+          /* Subtle horizontal board-grain texture */
+          ctx.fillStyle = 'rgba(255,255,255,0.009)';
+          for (let y2 = 0; y2 < H; y2 += 5) ctx.fillRect(0, y2, W, 1);
+
+          drawChalk(path.slice(0, endIdx + 1));
+          drawDust(progress);
+
+          if (progress < 1) {
+            requestAnimationFrame(tick);
+          } else {
+            phase = 'hold';
+            holdTs = ts;
+            requestAnimationFrame(tick);
+          }
+
+        } else if (phase === 'hold') {
+          /* keep the completed spiral visible for a beat */
+          if (ts - holdTs >= HOLD_MS) {
+            phase = 'flash';
+            flashTs = ts;
+          }
+          requestAnimationFrame(tick);
+
+        } else {
+          /* White flash — swallows the screen, then navigate */
+          const fp = Math.min((ts - flashTs) / FLASH_MS, 1);
+          const ease = fp < 0.5 ? 4 * fp * fp * fp : 1 - Math.pow(-2 * fp + 2, 3) / 2;
+          ctx.fillStyle = `rgba(255,255,255,${ease})`;
+          ctx.fillRect(0, 0, W, H);
+
+          if (fp < 1) {
+            requestAnimationFrame(tick);
+          } else {
+            sessionStorage.setItem('wasm_done', '1');
+            window.location.href = href;
+          }
+        }
+      });
+    }
+  </script>
+
+  <!-- ── Benchmark Logic (100% PRESERVED — zero changes to computation) ──────── -->
+  <script type="module">
+    import { loadModule, runBenchmarkN } from '../src/js/mlkem768-wrapper.js';
+    import { uploadBenchmark } from '../src/js/telemetry.js';
+
+    const $ = id => document.getElementById(id);
+
+    function addKV(container, k, v) {
+      const d = document.createElement('div');
+      d.className = 'kv';
+      d.innerHTML = `<span>${k}</span><span>${v}</span>`;
+      container.appendChild(d);
+    }
+
+    /** Format a statistical timing entry as "mean ± stdDev  [P5–P95]". */
+    function fmtStat(stat) {
+      const pct = (stat.p5 !== undefined && stat.p95 !== undefined)
+        ? `<span class="stat-detail"> [P5 ${stat.p5.toFixed(3)}–P95 ${stat.p95.toFixed(3)}]</span>`
+        : `<span class="stat-detail"> [${stat.min.toFixed(3)}–${stat.max.toFixed(3)}]</span>`;
+      return `${stat.mean.toFixed(3)} ± ${stat.stdDev.toFixed(3)}${pct}`;
+    }
+
+    const TIMING_LABELS = {
+      mlkemKeyGenMs: 'ML-KEM KeyGen',
+      mlkemEncapsMs: 'ML-KEM Encaps',
+      mlkemDecapsMs: 'ML-KEM Decaps',
+      x25519ExchangeMs: 'X25519 Exchange',
+      hkdfMs: 'HKDF-SHA-256',
+      aesGcmEncryptMs: 'AES-GCM Encrypt',
+      aesGcmDecryptMs: 'AES-GCM Decrypt',
+      totalHandshakeMs: 'Total Handshake',
+    };
+
+
+
+    $('runBtn').addEventListener('click', async () => {
+      const btn = $('runBtn');
+      const n = 50;
+      btn.disabled = true;
+      $('hintArrow').classList.remove('visible');
+      $('status').style.display = 'block';
+      $('status').textContent = 'Loading WASM module...';
+
+      try {
+        await loadModule('../dist/mlkem768.js');
+        $('status').textContent = `Running ${n} handshake iterations (+ 100 warm-up)...`;
+
+        const result = await runBenchmarkN(n);
+
+        $('hardware').style.display = 'block';
+        $('timings').style.display = 'block';
+        $('sizes').style.display = 'block';
+        $('jsonOut').style.display = 'block';
+
+        /* Hardware */
+        $('hwGrid').innerHTML = '';
+        addKV($('hwGrid'), 'RAM (GiB)', result.hardware.ramGiB);
+        addKV($('hwGrid'), 'Logical Cores', result.hardware.logicalCores);
+        addKV($('hwGrid'), 'Platform', result.hardware.platform);
+        addKV($('hwGrid'), 'OS', `${result.hardware.osName} ${result.hardware.osVersion}`);
+        addKV($('hwGrid'), 'Browser', `${result.hardware.browserName} ${result.hardware.browserVersion}`);
+        addKV($('hwGrid'), 'Device', `${result.hardware.deviceType}${result.hardware.deviceModel ? ' / ' + result.hardware.deviceModel : ''}`);
+        addKV($('hwGrid'), 'Iterations (N)', result.runs);
+        addKV($('hwGrid'), 'All Keys Match', result.keysMatch
+          ? '<span class="badge">YES</span>'
+          : '<span class="badge badge-fail">NO</span>');
+
+        /* WASM & Environment Probes */
+        const wf = result.hardware.wasmFeatures || {};
+        const checkIcon = `<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='3' stroke-linecap='round' stroke-linejoin='round' style='width:10px;height:10px;display:inline;vertical-align:middle;margin-right:2px;'><polyline points='20 6 9 17 4 12'></polyline></svg>`;
+        const xIcon = `<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='3' stroke-linecap='round' stroke-linejoin='round' style='width:10px;height:10px;display:inline;vertical-align:middle;margin-right:2px;'><line x1='18' y1='6' x2='6' y2='18'></line><line x1='6' y1='6' x2='18' y2='18'></line></svg>`;
+        const wasmBadges = [
+          wf.simd ? `${checkIcon}SIMD` : `${xIcon}SIMD`,
+          wf.threads ? `${checkIcon}Threads` : `${xIcon}Threads`,
+          wf.bulkMemory ? `${checkIcon}BulkMem` : `${xIcon}BulkMem`,
+          wf.relaxedSimd ? `${checkIcon}RelaxedSIMD` : `${xIcon}RelaxedSIMD`,
+        ].map(s => `<span class="badge${s.includes(xIcon) ? ' badge-fail' : ''}" style="margin-right:4px">${s}</span>`).join('');
+        addKV($('hwGrid'), 'WASM Features', wasmBadges);
+        addKV($('hwGrid'), 'Timer Precision', result.hardware.timerPrecisionMs != null ? result.hardware.timerPrecisionMs + ' ms' : '—');
+        addKV($('hwGrid'), 'Tab Visible', result.hardware.tabVisible
+          ? '<span class="badge">YES</span>'
+          : '<span class="badge badge-fail">HIDDEN</span>');
+        addKV($('hwGrid'), 'Baseline MIPS', result.hardware.baselineMips != null ? result.hardware.baselineMips + ' M ops/s' : '—');
+
+        /* Timings — statistical */
+        $('timeGrid').innerHTML = '';
+        for (const [key, label] of Object.entries(TIMING_LABELS)) {
+          if (result.timing[key]) {
+            addKV($('timeGrid'), label, fmtStat(result.timing[key]));
+          }
+        }
+
+        /* Sizes */
+        $('sizeGrid').innerHTML = '';
+        addKV($('sizeGrid'), 'ML-KEM Public Key', result.sizes.mlkemPublicKeyBytes);
+        addKV($('sizeGrid'), 'ML-KEM Secret Key', result.sizes.mlkemSecretKeyBytes);
+        addKV($('sizeGrid'), 'ML-KEM Ciphertext', result.sizes.mlkemCiphertextBytes);
+        addKV($('sizeGrid'), 'ML-KEM Shared Secret', result.sizes.mlkemSharedSecretBytes);
+        addKV($('sizeGrid'), 'Session Key', result.sizes.sessionKeyBytes);
+        addKV($('sizeGrid'), 'AES Ciphertext (1KB PT)', result.sizes.aesCiphertextBytes);
+
+        $('jsonPre').textContent = JSON.stringify(result, null, 2);
+
+        $('status').textContent = `Uploading results to Supabase telemetry...`;
+        const uploaded = await uploadBenchmark('wasm', result);
+        if (uploaded) {
+          $('status').innerHTML = `Benchmark complete — ${n} iterations. <span class="badge">Uploaded to DB</span>`;
+
+          const fromPureJs = sessionStorage.getItem('purejs_done');
+          if (!fromPureJs) {
+            // Path: WASM → Pure JS
+            setTimeout(() => playChalkTransition('pure-js.html' + window.location.search), 800);
+          } else {
+            // Already came from Pure JS, stop the loop.
+            sessionStorage.removeItem('purejs_done');
+            $('status').innerHTML += ' <span class="badge">Finished Journey</span>';
+          }
+        } else {
+          $('status').innerHTML = `Benchmark complete — ${n} iterations. <span class="badge badge-fail" style="background:transparent;">Telemetry Skipped</span>`;
+          // If no upload, show hint arrow if not coming from purejs
+          if (!sessionStorage.getItem('purejs_done')) {
+            setTimeout(() => $('hintArrow').classList.add('visible'), 600);
+          }
+        }
+
+        btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" style="width:14px;height:14px;margin-right:6px;vertical-align:middle;"><path d="M8 5v14l11-7z"></path></svg>Run Again`;
+      } catch (e) {
+        $('status').innerHTML = '<span class="error">Error: ' + e.message + '</span>';
+        console.error(e);
+      } finally {
+        btn.disabled = false;
+        $('iterSelect').disabled = false;
+      }
+    });
+
+    // Auto-run when someone visits the URL (useful for crowdsourcing device stats)
+    window.addEventListener('load', () => {
+      // Small delay to let fast Safari engines (iOS 17/18) settle
+      setTimeout(() => {
+        try {
+          if (sessionStorage.getItem('purejs_done')) {
+            $('hintArrow').style.display = 'none';
+          }
+        } catch (e) { }
+
+        const toggle = $('pureJsToggle');
+        if (toggle && window.location.search) {
+          toggle.href += window.location.search;
+        }
+
+        $('runBtn').click();
+      }, 500);
+    });
+  </script>
+  <script>
+    (function () {
+      const notice = document.getElementById('privacyNotice');
+      const toggle = document.getElementById('privacyToggle');
+      if (notice && toggle) {
+        toggle.addEventListener('click', function () {
+          const isOpen = notice.classList.toggle('open');
+          toggle.setAttribute('aria-expanded', isOpen);
+        });
+      }
+    })();
+  </script>
+</body>
+
+</html>
