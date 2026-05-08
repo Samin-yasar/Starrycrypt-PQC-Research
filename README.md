@@ -1,0 +1,296 @@
+# StarryCrypt-PQC
+
+[![IACR ePrint](https://img.shields.io/badge/IACR-ePrint-blue)](https://eprint.iacr.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![WASM](https://img.shields.io/badge/WebAssembly-✓-654FF0)](https://webassembly.org/)
+[![FIPS 203](https://img.shields.io/badge/FIPS%20203-Compliant-green)](https://csrc.nist.gov/projects/post-quantum-cryptography)
+
+**Web-Based Post-Quantum Cryptography: A Statistical Analysis of ML-KEM-768 in Controlled Browser Environments**
+
+This repository contains the implementation, benchmarking harness, and analysis code for the paper *"Evaluating Web-Based Post-Quantum Cryptography: A Statistical Analysis of ML-KEM-768 in Controlled Browser Environments"* (IACR ePrint, 2026).
+
+## Overview
+
+StarryCrypt-PQC implements **ML-KEM-768** (FIPS 203) with **X25519 hybrid key exchange** for web browsers. The implementation is available in both **WebAssembly (WASM)** and **pure JavaScript** variants, enabling comprehensive performance comparison across browser engines and device tiers.
+
+### Key Features
+
+- 🔐 **FIPS 203 Compliant**: NIST-standardized ML-KEM-768 implementation
+- 🔄 **Hybrid Key Exchange**: ML-KEM-768 + X25519 with HKDF-SHA-256
+- ⚡ **WASM Optimization**: 2.03× speedup over pure JavaScript
+- 📊 **Statistical Rigor**: 464 benchmark sessions across 22 hardware configurations
+- 🧪 **Constant-Time Testing**: Browser-native Welch's t-test harness
+- 📱 **Cross-Platform**: WebKit, Blink, Gecko support
+
+## Quick Start
+
+### Prerequisites
+
+- [Emscripten](https://emscripten.org/) (for WASM compilation)
+- Modern web browser with WebAssembly support
+- Python 3.8+ (for data analysis)
+- Node.js 18+ (optional, for JS development)
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/Samin-yasar/starrycrypt-pqc.git
+cd starrycrypt-pqc
+
+# Build the WASM module
+make all
+
+# Serve locally for testing
+make serve
+# Then open http://localhost:8080/run/
+```
+
+### Using the Library
+
+#### WASM Implementation (Recommended)
+
+```javascript
+import { loadModule, generateKeypair, encapsulate, decapsulate } from './src/js/mlkem768-wrapper.js';
+
+// Load the WASM module
+await loadModule('./dist/mlkem768.js');
+
+// Generate keypair
+const { publicKey, secretKey } = await generateKeypair();
+
+// Encapsulate (client side)
+const { ciphertext, sharedSecret: ssClient } = await encapsulate(publicKey);
+
+// Decapsulate (server side)
+const sharedSecret = await decapsulate(ciphertext, secretKey);
+
+// sharedSecret === ssClient ✓
+```
+
+#### Pure JavaScript Implementation
+
+```javascript
+import { generateKeypair, encapsulate, decapsulate } from './src/js/purejs-wrapper.js';
+
+// Same API as WASM version
+const { publicKey, secretKey } = await generateKeypair();
+const { ciphertext, sharedSecret } = await encapsulate(publicKey);
+```
+
+## Repository Structure
+
+```
+starrycrypt-pqc/
+├── src/
+│   ├── wasm/              # C source for WASM compilation
+│   │   ├── kem.c          # ML-KEM-768 core implementation
+│   │   ├── fips202.c      # SHA-3/SHAKE (FIPS 202)
+│   │   ├── indcpa.c       # IND-CPA secure PKE
+│   │   ├── poly.c         # Polynomial arithmetic
+│   │   └── ...
+│   └── js/                # JavaScript wrappers
+│       ├── mlkem768-wrapper.js    # WASM wrapper
+│       ├── purejs-wrapper.js      # Pure JS implementation
+│       └── telemetry.js          # Benchmarking telemetry
+├── dist/                  # Compiled WASM output
+│   ├── mlkem768.js
+│   └── mlkem768.wasm
+├── benchmark/             # Benchmarking harness
+│   ├── index.html
+│   └── pure-js.html
+├── data/                  # Telemetry dataset
+│   └── starrycrypt_telemetry_2026-05-05.csv
+├── analysis/              # Figure generation
+│   ├── figures/           # Generated PDFs/PNGs
+│   └── scripts/           # Python analysis scripts
+├── docs/                  # Documentation
+├── paper/                 # LaTeX paper source
+└── Makefile               # Build automation
+```
+
+## Benchmarking
+
+### Run Browser Benchmark
+
+1. Build the WASM module: `make all`
+2. Start local server: `make serve`
+3. Open `http://localhost:8080/run/` in target browser
+4. Benchmark runs automatically and downloads results as JSON
+
+### Run Headless Benchmarking
+
+For automated testing across multiple browsers:
+
+```bash
+cd scripts/
+node run_browserstack.js  # Requires BrowserStack credentials
+```
+
+### Reproducing Paper Figures
+
+```bash
+# Generate all figures from telemetry data
+cd analysis
+python3 -m venv ../.venv
+source ../.venv/bin/activate
+pip install pandas matplotlib numpy scipy
+
+# Generate figures
+python3 generate_figures.py
+
+# Verify statistics
+python3 ../verify_stats.py
+```
+
+## Performance Results
+
+| Implementation | Mean Latency | Median | Speedup |
+|-----------------|--------------|--------|---------|
+| WASM (all) | 3.97 ms | 1.28 ms | **2.03×** |
+| WASM (SIMD-capable) | 2.38 ms | 0.72 ms | 3.39× |
+| Pure JavaScript | 8.07 ms | 4.37 ms | baseline |
+
+**Key Finding**: WASM delivers 2.03× speedup over pure JS, with modern SIMD-capable browsers achieving sub-2.5ms latency.
+
+## Constant-Time Testing
+
+The repository includes a browser-native heuristic screening harness based on Welch's t-test:
+
+```javascript
+import { runCTTest } from './src/js/telemetry.js';
+
+// Run constant-time test (N=100 interleaved trials)
+const result = await runCTTest({ iterations: 100 });
+console.log(`t-statistic: ${result.tStat} (|t| < 2.0 suggests no gross leakage)`);
+```
+
+**⚠️ Important**: This harness provides *development-stage screening only*. Production deployment requires TVLA-grade evaluation (N ≥ 10,000) with hardware-level timing.
+
+## FIPS 203 Compliance
+
+Our implementation correctly applies all NIST-mandated modifications from Kyber Round 3:
+
+- ✅ **Hash Domain Separation**: Uses `0x06` for SHA-3, `0x1F` for SHAKE
+- ✅ **Dimension Parameter Concatenation**: 33-byte hash input (`seed ∥ k`)
+- ✅ **FO Transform**: Correct implicit rejection mechanism
+
+## Hybrid Key Exchange
+
+Implements the shared-secret concatenation order from [draft-ietf-tls-ecdhe-mlkem-04](https://datatracker.ietf.org/doc/draft-ietf-tls-ecdhe-mlkem-04/):
+
+```
+combinedSS = HKDF-SHA-256(ML-KEM-768 SS ∥ X25519 SS, "hybrid-kex", 32)
+```
+
+## Citation
+
+If you use this code or data in your research, please cite:
+
+```bibtex
+@misc{yasar2026starrycrypt,
+  author       = {Yasar, Samin},
+  title        = {Evaluating Web-Based Post-Quantum Cryptography: 
+                  A Statistical Analysis of {ML-KEM-768} in Controlled Browser Environments},
+  year         = {2026},
+  howpublished = {IACR ePrint},
+  url          = {https://eprint.iacr.org/2026/TBD}
+}
+```
+
+## Telemetry Dataset
+
+The repository includes our complete benchmark dataset (`data/starrycrypt_telemetry_2026-05-05.csv`):
+
+- **464 total sessions**: 241 WASM, 223 pure JS
+- **309 lab sessions**: Controlled synthetic runs (BrowserStack)
+- **155 field sessions**: Organic user benchmarks
+- **22 hardware configurations**: Budget to flagship devices
+- **3 browser engines**: WebKit, Blink, Gecko
+
+Data fields: implementation type, latency measurements (total + per-phase), browser info, device tier, WASM capabilities, baseline MIPS.
+
+## Security Considerations
+
+### Memory Zeroization
+
+WASM implementation includes secure memory clearing:
+
+```c
+// wasm_export.c
+void mlkem_zeroize(void* ptr, size_t len) {
+    volatile unsigned char* p = ptr;
+    while (len--) *p++ = 0;
+}
+```
+
+### Side-Channel Resistance
+
+- No secret-dependent branches in core algorithms
+- Constant-time Barrett reduction
+- Warning: Browser environments have degraded timing resolution (100μs–1ms) due to anti-fingerprinting measures
+
+## Browser Compatibility
+
+| Browser | WASM | SIMD | Threads | Minimum Version |
+|---------|------|------|---------|-----------------|
+| Chrome | ✓ | ✓ | ✓ | 57+ |
+| Firefox | ✓ | ✓ | ✓ | 52+ |
+| Safari | ✓ | ✓ | ✗ | 11+ |
+| Edge | ✓ | ✓ | ✓ | 16+ |
+
+## Development
+
+### Building from Source
+
+```bash
+# Install Emscripten (if not already installed)
+git clone https://github.com/emscripten-core/emsdk.git
+cd emsdk
+./emsdk install latest
+./emsdk activate latest
+source ./emsdk_env.sh
+
+# Build StarryCrypt-PQC
+cd /path/to/starrycrypt-pqc
+make all
+```
+
+### Running Tests
+
+```bash
+# Verify FIPS 203 compliance test vectors
+node tests/verify_vectors.js
+
+# Run statistical verification
+python3 verify_stats.py
+```
+
+## Contributing
+
+Contributions welcome! Please open an issue or PR for:
+- Bug fixes
+- Performance improvements
+- Additional test vectors
+- Documentation improvements
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file.
+
+## Acknowledgments
+
+- [CRYSTALS-Kyber](https://pq-crystals.org/kyber/) reference implementation
+- [NIST Post-Quantum Cryptography Standardization](https://csrc.nist.gov/projects/post-quantum-cryptography)
+- [Emscripten](https://emscripten.org/) WebAssembly compiler
+- [@noble/post-quantum](https://github.com/paulmillr/noble-post-quantum) for pure JS comparison baseline
+
+## Contact
+
+- **Research**: research@samin-yasar.dev
+- **Issues**: [GitHub Issues](https://github.com/Samin-yasar/starrycrypt-pqc/issues)
+- **Paper**: IACR ePrint (link TBD)
+
+---
+
+**⚠️ Disclaimer**: This is research code for evaluation and benchmarking. While we follow FIPS 203 specifications, production deployment should undergo additional security audits and formal verification.
