@@ -1,0 +1,232 @@
+% ═══════════════════════════════════════════════════════════════════════════════
+% StarryCrypt-PQC — References (IEEE-compliant BibTeX)
+% ═══════════════════════════════════════════════════════════════════════════════
+
+@techreport{NIST-FIPS-203,
+  author       = {{National Institute of Standards and Technology}},
+  title        = {{FIPS 203}: Module-Lattice-Based Key-Encapsulation Mechanism Standard},
+  institution  = {U.S. Department of Commerce},
+  year         = {2024},
+  type         = {Federal Information Processing Standard},
+  url          = {https://csrc.nist.gov/pubs/fips/203/final}
+}
+
+@techreport{NIST-FIPS-204,
+  author       = {{National Institute of Standards and Technology}},
+  title        = {{FIPS 204}: Module-Lattice-Based Digital Signature Standard},
+  institution  = {U.S. Department of Commerce},
+  year         = {2024},
+  type         = {Federal Information Processing Standard},
+  url          = {https://csrc.nist.gov/pubs/fips/204/final}
+}
+
+@techreport{W3C-WebCrypto,
+  author      = {Sleevi, Ryan and Watson, Mark},
+  title       = {Web Cryptography API},
+  institution = {W3C},
+  year        = {2017},
+  type        = {W3C Recommendation},
+  url         = {https://www.w3.org/TR/WebCryptoAPI/}
+}
+
+@inproceedings{reparaz2017dude,
+  author    = {Reparaz, Oscar and Balasch, Josep and Verbauwhede, Ingrid},
+  title     = {Dude, is my code constant time?},
+  booktitle = {Proc. Design, Automation \& Test in Europe Conf. \& Exhib.},
+  year      = {2017},
+  pages     = {1697--1702},
+  publisher = {IEEE},
+  doi       = {10.23919/DATE.2017.7927267}
+}
+
+@misc{stebila2026ecdheMlkem,
+  author       = {Kwiatkowski, Kris and Kampanakis, Panos and Westerbaan, Bas and Stebila, Douglas},
+  title        = {Post-quantum hybrid {ECDHE-MLKEM} key agreement for {TLS}v1.3},
+  year         = {2026},
+  note         = {Internet-Draft draft-ietf-tls-ecdhe-mlkem-04, Feb. 2026 (IETF work in progress; not yet an RFC). Per \S4.3 the X25519MLKEM768 shared secret concatenation is ML-KEM-768 SS \textbar\textbar{} X25519 SS (ML-KEM first), which reverses the lexical naming convention for historical reasons. [Online]. Available: \url{https://datatracker.ietf.org/doc/draft-ietf-tls-ecdhe-mlkem/}}
+}
+
+@misc{stebila2026hybrid,
+  author       = {Stebila, Douglas and Fluhrer, Scott and Gueron, Shay},
+  title        = {Hybrid key exchange in {TLS} 1.3},
+  year         = {2026},
+  note         = {Internet-Draft draft-ietf-tls-hybrid-design-04, Feb. 2026 (IETF work in progress; not yet an RFC). [Online]. Available: \url{https://datatracker.ietf.org/doc/draft-ietf-tls-hybrid-design/}}
+}
+
+@misc{v8-turbofan-tiering,
+  author       = {{V8 Project}},
+  title        = {V8 JavaScript Engine: Compilation Pipeline},
+  year         = {2026},
+  note         = {Accessed: 2026-05-06. [Online]. Available: \url{https://v8.dev/docs/turbofan}. Archived snapshot: \url{https://web.archive.org/web/20260506000000*/https://v8.dev/docs/turbofan}. Note: this is a living web document; the archived snapshot should be cited in preference to the live URL for reproducibility.}
+}
+
+@misc{spidermonkey-ionmonkey,
+  author       = {{Mozilla Project}},
+  title        = {SpiderMonkey: {IonMonkey} Optimizing Compiler},
+  year         = {2026},
+  note         = {Accessed: 2026-05-07. [Online]. Available: \url{https://firefox-source-docs.mozilla.org/js/index.html}. The IonMonkey tier-up pipeline is described in the SpiderMonkey documentation; Baseline Interpreter $\to$ IonMonkey optimization requires many prior invocations to reach the hotness threshold.}
+}
+
+@misc{webkit-jsc-b3,
+  author       = {Pizlo, Filip},
+  title        = {Introducing the {B3} {JIT} Compiler},
+  year         = {2016},
+  note         = {WebKit Blog. The B3/Air tier is the highest optimization level in JSC's tiered compilation pipeline.},
+  url          = {https://webkit.org/blog/5852/introducing-the-b3-jit-compiler/}
+}
+
+@inproceedings{shor1994algorithms,
+  author    = {Shor, Peter W.},
+  title     = {Algorithms for quantum computation: discrete logarithms and factoring},
+  booktitle = {Proc. 35th Annu. Symp. Foundations Comput. Sci. (FOCS)},
+  year      = {1994},
+  pages     = {124--134},
+  publisher = {IEEE},
+  doi       = {10.1109/SFCS.1994.365700}
+}
+
+@inproceedings{bernstein2018ntrprime,
+  author    = {Bernstein, Daniel J. and Chuengsatiansup, Chitchanok and Lange, Tanja and van Vredendaal, Christine},
+  title     = {{NTRU} Prime: reducing attack surface at low cost},
+  booktitle = {Selected Areas in Cryptography --- {SAC} 2017},
+  year      = {2018},
+  series    = {Lecture Notes in Comput. Sci.},
+  volume    = {10719},
+  pages     = {235--260},
+  publisher = {Springer},
+  doi       = {10.1007/978-3-319-72565-9_12}
+}
+
+@techreport{avanzi2021kyber,
+  author      = {Avanzi, Roberto and Bos, Joppe and Ducas, L{\'e}o and Kiltz, Eike and Lepoint, Tancr{\`e}de and Lyubashevsky, Vadim and Schanck, John M. and Schwabe, Peter and Seiler, Gregor and Stehl{\'e}, Damien},
+  title       = {{CRYSTALS-Kyber}: Algorithm Specifications and Supporting Documentation},
+  institution = {NIST PQC Competition},
+  year        = {2021},
+  type        = {Round 3 Submission},
+  url         = {https://pq-crystals.org/kyber/data/kyber-specification-round3-20210804.pdf}
+}
+
+@inproceedings{almeida2016verifying,
+  author    = {Almeida, Jos{\'e} Bacelar and Barbosa, Manuel and Barthe, Gilles and Dupressoir, Fran{\c{c}}ois and Emmi, Michael},
+  title     = {Verifying constant-time implementations},
+  booktitle = {Proc. 25th {USENIX} Security Symp.},
+  year      = {2016},
+  pages     = {53--70},
+  publisher = {USENIX Association}
+}
+
+@misc{weiser2018data,
+  author       = {Weiser, Samuel and Zankl, Andreas and Spreitzer, Raphael and Miller, Katja and Mangard, Stefan and Sigl, Georg},
+  title        = {{DATA}---Differential Address Trace Analysis: Finding Address-based Side-Channels in Binaries},
+  howpublished = {Cryptology ePrint Archive, Report 2018/1097},
+  year         = {2018},
+  url          = {https://eprint.iacr.org/2018/1097}
+}
+
+% FIX: author name corrected from "Brice" to "Brian" (verified against DBLP,
+%      ePrint 2018/903, and Stebila's own publications page).
+@inproceedings{bindel2019hybrid,
+  author    = {Bindel, Nina and Brendel, Jacqueline and Fischlin, Marc and Goncalves, Brian and Stebila, Douglas},
+  title     = {Hybrid key encapsulation mechanisms and authenticated key exchange},
+  booktitle = {Proc. Int. Conf. Post-Quantum Cryptography (PQCrypto)},
+  year      = {2019},
+  series    = {Lecture Notes in Comput. Sci.},
+  volume    = {11505},
+  pages     = {206--226},
+  publisher = {Springer},
+  doi       = {10.1007/978-3-030-25510-7_12}
+}
+
+% --- Additional references needed by the paper ---
+
+@inproceedings{krawczyk2010hkdf,
+  author    = {Krawczyk, Hugo},
+  title     = {Cryptographic extraction and key derivation: The {HKDF} scheme},
+  booktitle = {Advances in Cryptology --- {CRYPTO} 2010},
+  year      = {2010},
+  series    = {Lecture Notes in Comput. Sci.},
+  volume    = {6223},
+  pages     = {631--648},
+  publisher = {Springer},
+  doi       = {10.1007/978-3-642-14623-7_34}
+}
+
+@techreport{rfc8446,
+  author      = {Rescorla, Eric},
+  title       = {The {Transport Layer Security} ({TLS}) Protocol Version 1.3},
+  institution = {IETF},
+  year        = {2018},
+  type        = {RFC 8446},
+  doi         = {10.17487/RFC8446},
+  url         = {https://www.rfc-editor.org/rfc/rfc8446}
+}
+
+@inproceedings{haas2017webassembly,
+  author    = {Haas, Andreas and Rossberg, Andreas and Schuff, Derek L. and Titzer, Ben L. and Holman, Michael and Gohman, Dan and Wagner, Luke and Zakai, Alon and Bastien, JF},
+  title     = {Bringing the web up to speed with {WebAssembly}},
+  booktitle = {Proc. 38th {ACM} {SIGPLAN} Conf. Programming Language Design Implement. (PLDI)},
+  year      = {2017},
+  pages     = {185--200},
+  publisher = {ACM},
+  doi       = {10.1145/3062341.3062363}
+}
+
+@misc{noble-post-quantum,
+  author       = {Miller, Paul},
+  title        = {noble-post-quantum: Post-quantum cryptography in {JavaScript}},
+  year         = {2024},
+  note         = {Pure JavaScript ML-KEM and ML-DSA implementation (version 0.2.0). [Online]. Available: \url{https://github.com/paulmillr/noble-post-quantum}}
+}
+
+@inproceedings{schneider2015leakage,
+  author    = {Schneider, Tobias and Moradi, Amir},
+  title     = {Leakage Assessment Methodology --- {A} clear roadmap for side-channel evaluations},
+  booktitle = {Proc. 17th Int. Workshop Cryptograph. Hardware Embedded Syst. (CHES)},
+  year      = {2015},
+  series    = {Lecture Notes in Comput. Sci.},
+  volume    = {9293},
+  pages     = {495--513},
+  publisher = {Springer},
+  doi       = {10.1007/978-3-662-48324-4_25},
+  note      = {The community rule of thumb of $N \geq 10{,}000$ measurements for high-confidence leakage detection is a practitioner extrapolation from the sample-size analysis in this work, not a verbatim threshold stated therein.}
+}
+
+@inproceedings{GJJR11,
+  author    = {Goodwill, Gilbert and Jun, Benjamin and Jaffe, Josh and Rohatgi, Pankaj},
+  title     = {A testing methodology for side-channel resistance validation},
+  booktitle = {NIST Non-Invasive Attack Testing Workshop},
+  year      = {2011},
+  note      = {The \textbar{}t\textbar{} = 4.5 threshold introduced here applies to the TVLA methodology generally, not exclusively to AES; see Schneider \& Moradi (CHES 2015) for extended discussion.},
+  url       = {https://csrc.nist.gov/csrc/media/events/non-invasive-attack-testing-workshop/documents/08_goodwill.pdf}
+}
+
+@book{nielsen1993usability,
+  title     = {Usability Engineering},
+  author    = {Nielsen, Jakob},
+  year      = {1993},
+  publisher = {Morgan Kaufmann},
+  isbn      = {978-0125184069},
+  note      = {The 200~ms response-time threshold discussed in Chapter~5 is a general user-experience (UX) guideline for perceived immediacy, not a cryptography- or TLS-specific performance budget.}
+}
+
+@misc{langley2010ct,
+  author       = {Langley, Adam},
+  title        = {Checking that functions are constant time with {Valgrind}},
+  year         = {2010},
+  note         = {Accessed: 2026-05-06. [Online]. Available: \url{https://www.imperialviolet.org/2010/04/01/ctgrind.html}}
+}
+
+@misc{starrycrypt-artifact,
+  author       = {Yasar, Samin},
+  title        = {StarryCrypt-PQC: Web-based ML-KEM-768 Benchmarking Artifact},
+  year         = {2026},
+  note         = {GitHub repository with full dataset, benchmark harness, and supplementary grey literature index.},
+  url          = {https://github.com/Samin-yasar/Starrycrypt-PQC-Research}
+}
+
+@misc{pqclean,
+  author       = {{PQClean Contributors}},
+  title        = {{PQClean}: Portable, clean implementations of post-quantum cryptographic schemes},
+  year         = {2026},
+  note         = {Community-maintained collection of reference implementations. [Online]. Available: \url{https://github.com/PQClean/PQClean}. Commit bea734c used in this work.}
+}

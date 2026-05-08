@@ -1,0 +1,659 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{amsthm}
+\newtheorem{theorem}{Theorem}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage[hyphens,spaces,obeyspaces]{xurl}
+\usepackage[breaklinks=true]{hyperref}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage[utf8]{inputenc}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=blue,
+    urlcolor=blue,
+    citecolor=blue,
+    pdftitle={Evaluating Web-Based Post-Quantum Cryptography: A Statistical Analysis of ML-KEM-768 in Controlled Browser Environments},
+    pdfauthor={Samin Yasar},
+    pdfkeywords={Post-Quantum Cryptography, ML-KEM, WebAssembly, JavaScript, Browser Performance, Hybrid Key Exchange},
+}
+
+% Fix for hyperref: disable formatting commands in PDF bookmarks
+\pdfstringdefDisableCommands{%
+  \def\textbf#1{#1}%
+  \def\texttt#1{#1}%
+  \def\emph#1{#1}%
+}
+
+\title{Evaluating Web-Based Post-Quantum Cryptography: A Statistical Analysis of ML-KEM-768 in Controlled Browser Environments}
+
+\author{Samin Yasar\\
+    Independent Researcher\\
+    Dhaka, Bangladesh\\
+    \texttt{research@samin-yasar.dev}}
+
+\date{May 2026}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+\noindent
+We present an empirical evaluation framework for browser-based post-quantum cryptography using FIPS 203 ML-KEM-768 in WebAssembly and JavaScript environments. Modern web platforms currently lack native PQC interfaces, requiring implementations to execute within managed browser runtimes whose JIT compilation, memory management, and feature-detection behavior complicate reliable performance analysis.
+
+To investigate these effects, we develop StarryCrypt-PQC, an open-source hybrid ML-KEM-768 + X25519 implementation for controlled browser benchmarking. Using a dataset of $N = 463$ benchmark sessions collected across three browser engines, multiple runtime generations, and devices ranging from budget mobile hardware to desktop systems, we evaluate deployment-level performance characteristics of browser-based PQC execution.
+
+Our measurements show that browser runtime generation strongly correlates with observed handshake latency, with Safari/WebKit and recent Chromium releases consistently outperforming older Chromium and Gecko-based runtimes. We additionally observe lower cryptographic-core latency for the WebAssembly implementation relative to pure JavaScript execution, although end-to-end comparisons remain influenced by substantial runtime and framework overhead.
+
+Beyond raw measurements, the study identifies several methodological pitfalls affecting web-based PQC evaluation, including JIT warm-up instability, unreliable WebAssembly SIMD feature reporting, runtime-version confounding, and incomplete instrumentation of browser-managed overhead. We document these limitations explicitly and provide the accompanying implementation artifact and benchmark dataset to support future reproducible research on browser-native post-quantum deployment.
+
+This work is intended as an empirical and methodological contribution focused on reproducible evaluation of browser-based PQC systems rather than a proposal of new cryptographic primitives or protocol designs.
+
+\end{abstract}
+
+\paragraph{Keywords.} Post-Quantum Cryptography, ML-KEM, WebAssembly, JavaScript, Browser Performance, Hybrid Key Exchange
+
+\section{Introduction}
+\label{sec:introduction}
+
+Large-scale quantum computers, once built, will be able to break widely deployed public-key algorithms such as RSA and elliptic-curve Diffie-Hellman~\cite{shor1994algorithms}. In response, NIST finalized FIPS~203, standardizing the Module-Lattice-Based Key-Encapsulation Mechanism (ML-KEM)~\cite{NIST-FIPS-203}. Although native deployments are progressing rapidly, web-based adoption lags behind. Because modern browser-native cryptographic interfaces, such as the Web Cryptography API~\cite{W3C-WebCrypto}, lack support for post-quantum primitives, researchers and developers must rely on JavaScript virtual machines and WebAssembly (WASM) runtimes~\cite{haas2017webassembly}. In these environments, just-in-time (JIT) compilation and garbage collection (GC) introduce unpredictable latencies that complicate both performance measurement and side-channel analysis.
+
+We present a systematic benchmarking methodology and a reproducible dataset for evaluating web-based post-quantum cryptography, with explicit documentation of measurement conditions and methodological limitations. This work is primarily an empirical and methodological contribution focused on reproducible evaluation of browser-based PQC deployments.
+
+A natural assumption is that web PQC performance scales with device compute power: faster hardware yields lower latency. Through a systematic evaluation of $N=463$ benchmark sessions (post-exclusion; $467$ collected, $n=3$ excluded for warm-up validation, $n=1$ Chrome~87 outlier excluded) across three browser engines, 22 hardware configurations, and two implementation strategies (WASM and pure JavaScript), we present evidence that browser runtime vintage is the most robust performance predictor in our data, though this association is confounded with hardware distribution---budget-tier devices disproportionately run modern runtimes, preventing separation of browser effects from hardware effects (see \S\ref{subsec:tiers}). We observe a $3.45\times$ mean latency reduction for WASM total-handshake latency compared to pure JavaScript ($2.34$~ms vs. $8.07$~ms, with Chrome~87 outlier excluded). We note that 87\% of total latency is uninstrumented framework overhead, so this comparison conflates cryptographic core performance with framework integration costs. We foreground the browser-vintage observation as the primary finding (\S\ref{subsec:tiers}) and treat the WASM vs. JS comparison as a secondary descriptive observation. All subgroup analyses in this work are exploratory and should be interpreted as descriptive observations requiring independent replication.
+
+Existing browser-based PQC evaluations often rely on ad-hoc benchmarking with small sample sizes, and many still target pre-finalization ``Kyber'' drafts rather than the finalized FIPS~203 standard. Few studies systematically compare WASM versus pure JavaScript across multiple browser engines and hardware tiers.
+
+We present \textit{StarryCrypt-PQC}, an open-source hybrid ML-KEM-768 + X25519 key exchange for the web, as a controlled experimental vehicle to investigate these questions. Our contributions are:
+\begin{enumerate}
+    \item \textbf{Reproducible Benchmarking Framework for Web-Based PQC.} We develop a systematic evaluation methodology for browser-based post-quantum cryptography that addresses practical benchmarking challenges arising from JIT compilation, browser-managed memory behavior, and heterogeneous runtime environments.
+    \item \textbf{Cross-Engine Empirical Evaluation Dataset.} We provide a dataset of 463 benchmark sessions spanning WebKit, Blink, and Gecko runtimes across mobile and desktop hardware configurations. The dataset captures both controlled laboratory measurements and organically collected field sessions.
+    \item \textbf{Analysis of Runtime-Level Performance Behavior.} We present descriptive observations regarding browser-runtime influence on ML-KEM-768 execution latency, including cross-engine variance, runtime-generation effects, and deployment-specific behavior in managed browser environments.
+    \item \textbf{Documentation of Browser Measurement Pitfalls.} We identify several practical issues affecting browser-based cryptographic benchmarking, including unreliable SIMD capability reporting through \texttt{WebAssembly.validate()}, JIT warm-up instability, and the difficulty of separating cryptographic execution time from browser-managed framework overhead.
+    \item \textbf{Open-Source Implementation Artifact.} We release an open-source hybrid ML-KEM-768 + X25519 implementation and accompanying benchmarking harness to support reproducibility and future empirical research on browser-based post-quantum cryptography.
+\end{enumerate}
+
+\section{Background and Related Work}
+\label{sec:background}
+
+\subsection{From Kyber to FIPS 203 ML-KEM}
+\label{subsec:kyber-to-fips203}
+
+ML-KEM originates from the CRYSTALS-Kyber submission~\cite{avanzi2021kyber}, which progressed through three NIST evaluation rounds before being standardized as FIPS~203 in August 2024. Alongside ML-KEM, NIST standardized ML-DSA (FIPS~204) for digital signatures~\cite{NIST-FIPS-204}, completing the primary post-quantum cryptographic suite. While much existing literature evaluates ``Kyber Round~3,'' the finalized standard introduces small but security-critical changes. Failure to adopt these changes results in domain separation vulnerabilities, meaning that different cryptographic operations could be confused with one another.
+
+Our implementation correctly applies the NIST-mandated modifications:
+\begin{itemize}
+    \item \textbf{Hash Domain Separation:} Use of \texttt{0x06} for SHA-3 padding and \texttt{0x1F} for SHAKE, as specified by FIPS~202.
+    \item \textbf{Dimension Parameter Concatenation:} During key generation, FIPS~203 requires the concatenation of the dimension parameter~($k$) prior to hashing the seed. Our implementation enforces this 33-byte hash input ($\textit{seed} \parallel k$), a critical change from the 32-byte hash used in Round~3 implementations.
+\end{itemize}
+
+\subsection{Hybrid Key Exchange: What We Follow from the Draft}
+\label{subsec:hybrid-kex}
+
+To protect against the possibility that lattice-based cryptography could harbor undiscovered weaknesses, a hybrid approach combining PQC with well-studied elliptic-curve cryptography is recommended~\cite{bindel2019hybrid}. The IETF \texttt{draft-ietf-tls-ecdhe-mlkem-04} specification~\cite{stebila2026ecdheMlkem} defines three hybrid groups for TLS~1.3: X25519MLKEM768, SecP256r1MLKEM768, and SecP384r1MLKEM1024. Our implementation focuses on the X25519MLKEM768 construction and adopts the following from the draft:
+
+\begin{itemize}
+    \item \textbf{Shared-secret concatenation order:} $\text{ML-KEM-768 SS} \parallel \text{X25519 SS}$ (64 bytes total, 32 bytes each), matching \S4.3 of the draft. \textbf{We explicitly note an interoperability trap}: the draft specifies this order for historical reasons unique to the X25519MLKEM768 group, which reverses the general hybrid naming convention (where the name would imply X25519 first, ML-KEM second). Implementers must carefully respect this historical inversion to maintain interoperability.
+    \item \textbf{X25519 all-zero shared-secret check:} Per RFC~8446 \S4.2.8 and the draft \S4.3, we abort if the X25519 shared secret is all-zero (indicating an invalid peer public key or small-order point).
+    \item \textbf{Byte-length validation:} Ciphertext and public-key lengths are validated against the FIPS~203 ML-KEM-768 parameters.
+\end{itemize}
+
+However, our code is a \emph{general-purpose cryptographic wrapper}, not a TLS~1.3 stack. The following \textbf{are not implemented} because they are TLS-specific and outside our scope:
+\begin{itemize}
+    \item TLS wire-format client/server share framing (e.g., the 1216-byte TLS client share, which is a composite structure concatenating the 32-byte X25519 public key and the 1184-byte ML-KEM encapsulation key).
+    \item TLS~1.3 key schedule integration (RFC~8446).
+    \item FIPS~203 \S7.2 encapsulation-key validation at the \emph{TLS framing boundary} (e.g., rejection of malformed encapsulation keys before they enter the TLS handshake state machine). At the \emph{cryptographic boundary}, the underlying PQClean dependency strictly validates the 1184-byte ML-KEM encapsulation key length and enforces the modulus check ($x < 3329$) during deserialization; only the TLS-specific framing-layer validation is omitted.
+    \item TLS alert handling (\texttt{illegal\_parameter}, \texttt{internal\_error}).
+\end{itemize}
+
+For application-level key derivation, we apply HKDF-SHA-256 over the 64-byte concatenation. We provide a security rationale (\S\ref{subsec:hybrid-security}) informed by existing hybrid KEM composition literature, establishing that this construction preserves IND-CCA2 security under standard assumptions, provided the info string is globally unique per application context. The construction applies HKDF with a zero-length salt and a context-specific info string for two purposes: (1)~\textbf{domain separation}, ensuring the output key material is bound to the specific application context, and (2)~\textbf{output length control}, deriving a uniform 32-byte symmetric key regardless of IKM structure. \textbf{We note that the zero-length salt does not inject cryptographic entropy} (RFC~5869 \S3.1); when the salt is empty, HKDF-Extract reduces to $\text{HMAC-SHA-256}(\text{0x3636\ldots36}_{64}, \text{IKM})$---a well-defined PRF application under the HMAC security proof. As shown by Krawczyk~\cite{krawczyk2010hkdf}, HKDF extraction security does not depend on salt secrecy, randomness, or even presence---the pseudorandomness of the extracted key derives from the min-entropy of the IKM. \textbf{Critical deployment requirement:} Because the salt is zero-length (identical across all invocations), key separation across different applications or protocol instances relies \emph{entirely} on the info string being distinct. If two applications use this library with an identical info string, they will derive identical key material, enabling cross-protocol key-reuse attacks. Users of this library MUST select a globally unique info string per application context (e.g., \texttt{``MyApp-v1-MLKEM768-X25519-SessionKey''}). The default info string (\texttt{``Starrycrypt-PQC v1 | X25519MLKEM768 | AES-256-GCM''}) is intended for benchmarking only and MUST be overridden in production deployments. This HKDF step is an application-specific convenience wrapper for non-TLS use cases; it is \textbf{not part of the TLS~1.3 draft}, which feeds the raw 64-byte concatenation directly into the standard TLS~1.3 key schedule~\cite{rfc8446}:
+\begin{equation}
+SS_{\text{final}} = \text{HKDF-SHA-256}(\text{salt}=\emptyset, \text{IKM}=SS_{\text{ML-KEM}} \parallel SS_{\text{X25519}}, \text{info}=\text{ctx})
+\label{eq:hybrid}
+\end{equation}
+By the security rationale in \S\ref{subsec:hybrid-security}, this construction preserves IND-CCA2 security under standard assumptions: an attacker must break \emph{both} ML-KEM-768 and X25519 to compromise the derived key, subject to the info-string uniqueness requirement.
+
+\subsection{Related Work}
+\label{subsec:related-work}
+
+\textbf{Browser PQC Benchmarking.} Prior browser-based PQC evaluations include Bernstein et al.'s JavaScript NTRU Prime implementation~\cite{bernstein2018ntrprime} (measuring polyfills for lattice operations, but pre-WASM and limited to Firefox). Other studies exist as grey literature (blog posts, GitHub repositories) without peer-reviewed citable artifacts; we provide URLs for these in the artifact repository~\cite{starrycrypt-artifact}. These works demonstrated feasibility but did not address JIT warm-up artifacts, cross-engine variance, or FIPS~203 compliance---and typically reported results from fewer than 50 total sessions. Our work scales to 463 sessions across three browser engines and uses a systematic time-based warm-up protocol with post-hoc validation for tier-up completion.
+
+\textbf{Hybrid Key Exchange Standards.} Bindel et al.~\cite{bindel2019hybrid} formalized the security model for hybrid key encapsulation. The IETF has since advanced concrete specifications, including the general hybrid design framework~\cite{stebila2026hybrid} and the concrete \texttt{draft-ietf-tls-ecdhe-mlkem-04} specification~\cite{stebila2026ecdheMlkem}. Our implementation follows the draft's shared-secret concatenation order and X25519 validation checks, applied in an application-level (non-TLS) context.
+
+\section{Implementation and Security Architecture}
+\label{sec:implementation}
+
+Implementing cryptographic primitives in WASM requires careful engineering to overcome the lack of direct memory management and constant-time execution guarantees in web browsers.
+
+\subsection{Defense-in-Depth Memory Zeroization}
+\label{subsec:zeroization}
+
+WebAssembly executes within a linear memory space that JavaScript can read. If cryptographic secrets (e.g., private keys, decapsulated shared secrets) are not explicitly erased after use, they remain vulnerable to cross-site scripting (XSS) or memory-dump attacks.
+
+We implemented a two-tier zeroization strategy:
+\begin{enumerate}
+    \item \textbf{C/WASM Layer:} An explicit \texttt{mlkem\_zeroize} function uses a \texttt{volatile} pointer cast to prevent dead-store elimination---a compiler optimization that removes writes it considers unnecessary---from deleting the \texttt{memset} operation before the memory is freed.
+    \item \textbf{JavaScript Layer:} A strict wrapper protocol ensures all \texttt{Uint8Array} views that expose secret data call \texttt{.fill(0)} immediately after the hybrid session key is derived.
+\end{enumerate}
+
+\begin{quote}
+\textbf{SECURITY WARNING---Memory zeroization is NOT guaranteed in WASM/JS runtimes.} This library is \textbf{unsuitable for protecting long-lived secrets} (e.g., private keys persisted in browser state such as \texttt{localStorage}, \texttt{IndexedDB}, or session storage). Three independent mechanisms can defeat zeroization in managed browser environments:
+\begin{enumerate}
+    \item \textbf{JIT optimization ignores C-level \texttt{volatile}:} While the \texttt{volatile} cast prevents dead-store elimination by the Emscripten C compiler, JIT compilers in WASM runtimes (e.g., V8's TurboFan, SpiderMonkey's IonMonkey) perform subsequent optimization passes that do not preserve C-level \texttt{volatile} semantics. A JIT compiler may determine that a buffer is never read again and eliminate the zeroizing write, \textbf{leaving secret material in accessible WASM linear memory}.
+    \item \textbf{Engine-internal buffer copies:} JavaScript engines may create internal copies of buffer contents during type conversions, garbage collection, or when marshalling data across the WASM/JS boundary. These engine-internal copies are \textbf{not accessible for explicit zeroization} and may persist until garbage collection reclaims them---at which point the memory may be reused without being zeroed.
+    \item \textbf{WASM linear memory visibility:} The WASM linear memory space is readable from JavaScript via \texttt{WebAssembly.Memory.buffer}. Any secret that survives zeroization in this memory space is accessible to any JavaScript code running in the same origin, including code injected via XSS.
+\end{enumerate}
+A complete audit would require heap snapshots or engine-level instrumentation to verify that no un-zeroed copies persist after garbage collection. \textbf{No such audit has been performed for this library.} We therefore characterize our zeroization as a \emph{best-effort defense-in-depth} measure, not a formal guarantee of secret erasure in managed runtimes. \textbf{Deployment recommendation:} This library should be used only for ephemeral key exchange (e.g., single-session TLS-style handshakes where secrets are derived and consumed within milliseconds). It must \textbf{not} be used to protect long-lived secrets in browser state, where the window of exposure extends from milliseconds to hours or days.
+\end{quote}
+
+\subsection{PQClean Dependency and WASM Bindings}
+\label{subsec:pqclean}
+
+Our ML-KEM-768 implementation is derived from the PQClean project~\cite{pqclean}, a collection of post-quantum cryptographic implementations maintained by the PQCrypto community. This section documents the provenance, modifications, and WASM integration for reproducibility.
+
+\textbf{PQClean version and provenance.} The core cryptographic routines (KeyGen, Encaps, Decaps) are adapted from PQClean's \texttt{ml-kem-768/clean} implementation, corresponding to PQClean commit \texttt{bea734c} (April 2026). The PQClean implementation itself traces to the CRYSTALS-Kyber reference code~\cite{avanzi2021kyber} with modifications for FIPS~203 compliance. We note that PQClean is a community-maintained aggregation of reference implementations; it is not a NIST-endorsed distribution. The code carries the following licenses:
+\begin{itemize}
+    \item \textbf{ML-KEM core:} Public domain / CC0 (CRYSTALS-Kyber authors)
+    \item \textbf{SHA-3/SHAKE (fips202.c):} Public domain / CC0
+    \item \textbf{Randombytes (randombytes.c):} MIT License (Daan Sprenkels, 2017)
+\end{itemize}
+
+\textbf{Modifications from PQClean baseline.} We made the following modifications to the PQClean reference code:
+\begin{enumerate}
+    \item \textbf{WASM export layer:} Added \texttt{wasm\_export.c} providing Emscripten-specific bindings with \texttt{EMSCRIPTEN\_KEEPALIVE} annotations for the following functions: \texttt{mlkem\_malloc}, \texttt{mlkem\_free}, \texttt{mlkem\_zeroize}, \texttt{mlkem\_keypair}, \texttt{mlkem\_enc}, \texttt{mlkem\_dec}, \texttt{sha3\_256\_wasm}, \texttt{sha3\_512\_wasm}, \texttt{shake256\_wasm}.
+    \item \textbf{Emscripten random source:} Modified \texttt{randombytes.c} to use \texttt{EM\_ASM\_INT} for browser \texttt{crypto.getRandomValues()} integration when compiled with \texttt{\_\_EMSCRIPTEN\_\_} defined. The original PQClean implementation supports Linux, BSD, Windows, and WASI but not Emscripten's JavaScript runtime.
+    \item \textbf{Memory allocation interface:} Added explicit \texttt{mlkem\_malloc}/\texttt{mlkem\_free} wrappers to expose heap management to JavaScript, enabling pre-allocated buffers for performance-sensitive applications.
+    \item \textbf{No algorithmic modifications:} The core ML-KEM arithmetic (NTT, polynomial operations, CBD sampling, Fujisaki-Okamoto transform) is unchanged from PQClean. All FIPS~203 compliance properties (hash domain separation, dimension parameter concatenation) are inherited from the upstream implementation.
+\end{enumerate}
+
+\textbf{Emscripten compilation.} The WASM module is compiled with Emscripten v3.1.52 using the following flags:
+\begin{itemize}
+    \item \texttt{-O3}: Aggressive optimization for throughput
+    \item \texttt{-s WASM=1}: WebAssembly output (not asm.js fallback)
+    \item \texttt{-s MALLOC=emmalloc}: Emscripten's minimal memory allocator
+    \item \texttt{-s ALLOW\_MEMORY\_GROWTH=1}: Dynamic heap expansion
+    \item \texttt{-s MODULARIZE=1 -s EXPORT\_NAME="MLKEMModule"}: ES6 module wrapper
+    \item \textbf{Explicitly excluded:} \texttt{-msimd128} (SIMD disabled; see \S\ref{subsec:simd} for detection reliability issues)
+\end{itemize}
+
+\textbf{Known upstream security issues.} As of this writing, we are not aware of any published security vulnerabilities in PQClean's ML-KEM-768 implementation. However, we note the following caveats:
+\begin{itemize}
+    \item PQClean's ``clean'' implementation prioritizes readability over constant-time hardening. It uses algorithmic constant-time operations (e.g., Barrett reduction, value-barrier patterns) but does not employ hardware-specific timing defenses (e.g., cache preloading, DPA-resistant scalar multiplication).
+    \item The implementation has not undergone formal verification or third-party security audit. NIST's FIPS~203 standardization process evaluated the ML-KEM algorithm, not specific implementations.
+    \item Browser environments introduce additional attack surfaces (JIT-induced timing variance, garbage collection pauses, degraded timer precision) that are not addressed by the PQClean codebase.
+\end{itemize}
+
+\textbf{Reproducibility.} The complete source code, build scripts, and compilation environment are available in the artifact repository. The WASM binary can be reproduced by installing Emscripten v3.1.52 and running \texttt{make all} with the exact flags listed above. We recommend independent compilation and comparison of the resulting WASM binary hash before production deployment.
+
+\subsection{Security Analysis of the Hybrid Construction}
+\label{subsec:hybrid-security}
+
+We now provide a formal security argument for the hybrid construction defined in Equation~\ref{eq:hybrid}. Our analysis establishes that the construction preserves IND-CCA2 security under standard cryptographic assumptions, subject to a deployment discipline requirement on info-string uniqueness.
+
+\paragraph{Security Rationale for the Hybrid Construction}
+\label{thm:hybrid-security}
+\textbf{Rationale.} Assuming the security of ML-KEM-768 and the hardness assumptions underlying X25519-based ephemeral Diffie--Hellman exchange, and provided the info string is globally unique per application context, the output $SS_{\text{final}}$ of Equation~\ref{eq:hybrid} is computationally indistinguishable from a uniform 256-bit string. This rationale is informed by existing hybrid KEM composition literature; it is not a new formal proof.
+
+\begin{proof}[Proof sketch]
+The argument proceeds in three steps.
+
+\textbf{Step 1: Min-entropy of the concatenated shared secret.}
+By the hybrid KEM security composition result of Bindel et al.~\cite{bindel2019hybrid}, the concatenation $SS_{\text{ML-KEM}} \| SS_{\text{X25519}}$ preserves IND-CCA2 security under the assumption that at least one of the two component schemes remains secure. In particular, any PPT adversary that cannot break both KEMs simultaneously cannot distinguish the concatenated shared secret from a uniform 512-bit string. This implies that the IKM input to HKDF has min-entropy $\geq 256$ bits under the stated assumption.
+
+\textbf{Step 2: HKDF extraction with a zero-length salt preserves pseudorandomness.}
+Krawczyk~\cite{krawczyk2010hkdf} proves that the HKDF extraction step $\text{PRK} = \text{HMAC-SHA-256}(\text{salt}, \text{IKM})$ produces a pseudorandom key as long as the IKM has sufficient min-entropy, \emph{regardless of whether the salt is fixed, public, random, or even zero-length}. When the salt is empty, HKDF-Extract reduces to $\text{HMAC-SHA-256}(\text{0x3636\ldots36}_{64}, \text{IKM})$---a well-defined PRF application under the HMAC security proof. Krawczyk explicitly analyzes this case (Theorem~1 and \S3 of~\cite{krawczyk2010hkdf}): the pseudorandomness of PRK derives from the min-entropy of the IKM, not from the salt. This directly addresses the concern that the zero-length salt ``offers no entropy isolation'': entropy isolation is provided by the IKM itself (a 512-bit concatenation of two independent KEM shared secrets), not by the salt.
+
+\textbf{Step 3: HKDF expansion produces pseudorandom output.}
+The expansion step $\text{OKM} = \text{HMAC-SHA-256}(\text{PRK}, \text{info} \| \text{0x01})$ is a PRF application under the standard HMAC-SHA-256 PRF assumption. Given that PRK is pseudorandom (from Step~2), the output is computationally indistinguishable from uniform as long as the info string is unique per application context, ensuring domain separation across different invocations.
+
+Composing Steps~1--3, $SS_{\text{final}}$ is computationally indistinguishable from a uniform 256-bit string under the stated assumptions.
+\end{proof}
+
+\textbf{Comparison with TLS~1.3 key schedule.}
+The TLS~1.3 key schedule (RFC~8446~\cite{rfc8446}) applies HKDF-Extract with a \emph{zero-length} salt for the initial early secret derivation---the \textbf{identical} setup to our construction. TLS~1.3 then relies entirely on context-specific labels (analogous to our info strings) for key separation across the handshake. Our construction follows the same design pattern: a zero-length salt for extraction, with domain separation delegated to the info/label parameter. The TLS~1.3 key schedule has been formally analyzed within the TLS~1.3 security proofs~\cite{rfc8446}, and this analysis confirms that HKDF extraction security does not depend on salt secrecy or randomness.
+
+\textbf{Deviation from Bindel et al.'s composition.}
+Bindel et al.~\cite{bindel2019hybrid} define hybrid KEM composition at the KEM level, producing a combined KEM with its own encapsulation/decapsulation interface. Our construction composes at the shared-secret level and then applies HKDF for key derivation. This is a different composition pattern, but it can be analyzed within the same security framework. The key difference is that Bindel et al.'s ``dual'' combiner applies a key derivation function to the concatenation of shared secrets; our HKDF step serves exactly this role. The concatenation+HKDF approach is at least as strong as the XOR combiner (concatenation preserves strictly more information than XOR), and the HKDF step provides pseudorandom output under standard assumptions.
+
+\textbf{Info-string uniqueness as a deployment discipline requirement.}
+The security rationale in \S\ref{subsec:hybrid-security} assumes that the info string is globally unique per application context. This is a \emph{deployment discipline requirement}, not a cryptographic weakness of the construction. It is analogous to the requirement in TLS~1.3 that transcript hashes be distinct across different handshake sessions---a property guaranteed by the protocol design rather than by the cryptographic primitive itself. \textbf{If two applications use this library with an identical info string, they will derive identical key material, enabling cross-protocol key-reuse attacks.} Users of this library MUST select a globally unique info string per application context (e.g., \texttt{``MyApp-v1-MLKEM768-X25519-SessionKey''}). The default info string (\texttt{``Starrycrypt-PQC v1 | X25519MLKEM768 | AES-256-GCM''}) is intended for benchmarking only and MUST be overridden in production deployments.
+
+\textbf{Limitations of this analysis.}
+We emphasize three limitations: (1)~This is a proof sketch, not a fully formalized, machine-checked proof. A complete formalization would require instantiating the security definitions of Bindel et al.~\cite{bindel2019hybrid} and Krawczyk~\cite{krawczyk2010hkdf} in a unified framework and verifying the composition step-by-step. (2)~The analysis assumes the standard HMAC-SHA-256 PRF assumption and the IND-CCA2 security of at least one component KEM; if both are broken simultaneously, the construction provides no security. (3)~The info-string uniqueness requirement is a deployment discipline constraint that cannot be enforced by the cryptographic construction itself. Despite these limitations, the analysis provides a sound security argument under standard assumptions and clearly delineates the boundary between cryptographic guarantees and deployment responsibilities. We recommend independent cryptanalysis before production deployment.
+
+\section{Benchmarking Methodology}
+\label{sec:methodology}
+
+Evaluating performance inside a JavaScript virtual machine requires isolating the cryptographic algorithm from the execution environment's overhead. We addressed several methodological flaws common in previous web cryptography studies.
+
+\subsection{JIT Compilation Isolation}
+\label{subsec:jit}
+
+Browsers execute WASM and JS through tiered JIT compilers. In V8, code begins execution in the Ignition interpreter; once a function exceeds a ``hotness'' threshold, it is promoted to the TurboFan optimizing compiler for native machine code generation~\cite{v8-turbofan-tiering}. Safari's JavaScriptCore and Firefox's SpiderMonkey employ analogous tiering strategies (B3/Air and IonMonkey, respectively). The first several invocations thus run in an unoptimized interpreter state, producing latency spikes that do not reflect steady-state production performance.
+
+To isolate algorithmic throughput, we enforce a JIT warm-up phase. While V8's TurboFan typically promotes hot functions after 5--10 invocations, SpiderMonkey's IonMonkey and JavaScriptCore's B3/Air may require 1,000+ iterations for full tier-up~\cite{spidermonkey-ionmonkey,webkit-jsc-b3}. Rather than engine-specific tuning, we use a \textbf{time-based warm-up}: the benchmark runs dummy iterations for a fixed 200~ms duration before collecting measurements. This duration was selected empirically: across 10 pilot runs per engine, we observed coefficient-of-variation (CV) stabilization below 5\% after 150--180~ms on all three engines. The 200~ms threshold provides a safety margin while keeping total benchmark time under 1~second. Per-engine warm-up effectiveness is validated post-hoc: sessions where the first timed iteration exceeded 150\% of the session median were flagged as potentially under-warmed and excluded from analysis ($n=3$ exclusions, $0.6\%$ of total).
+
+\subsection{Garbage Collection and Timer Precision}
+\label{subsec:gc}
+
+Random garbage collection (GC) pauses can artificially inflate maximum latency measurements. To mitigate this:
+\begin{itemize}
+    \item We use high-resolution \texttt{performance.now()} timers strictly scoped to the WASM execution call (\texttt{ccall}), excluding JS-to-WASM memory-allocation overhead.
+    \item We report interpercentile ranges (P5--P95) rather than relying solely on min/max boundaries, providing a robust statistical view that naturally filters brief GC pauses.
+\end{itemize}
+
+\subsection{Dataset Composition}
+\label{subsec:dataset}
+
+Our dataset comprises $N=464$ total benchmark sessions after quality exclusions (Table~\ref{tab:dataset}); $467$ sessions were initially collected, of which $n=3$ were excluded for warm-up validation failure (see \S\ref{subsec:jit}), yielding the final $N=464$.
+\begin{itemize}
+    \item \textbf{Lab / Synthetic ($N=309$, 67\%):} Automated runs via BrowserStack and local headless scripts across 63 device/OS/browser configurations spanning 53 unique device models, with ground-truth hardware metadata (logical cores, RAM, SIMD flags). While the testing environment is structured, the configurations represent a diverse, historically broad cross-section of browser versions rather than a strictly controlled monolithic platform. Lab sessions are unevenly split between WASM ($n=154$) and pure JS ($n=155$).
+    \item \textbf{Field / Organic ($N=155$, 33\%):} Voluntary sessions from a publicly deployed test page, accessed primarily from Bangladesh and surrounding regions, with devices self-identifying via browser user-agent. Field data includes $n=87$ WASM and $n=68$ pure JS sessions.
+\end{itemize}
+
+Because the dataset is lab-dominant ($67\%$ controlled), our performance findings primarily reflect reproducible, controlled conditions rather than fully organic real-world variance. Field sessions ($33\%$) provide a sanity check that lab findings transfer to uncontrolled browser states (background tabs, thermal conditions, variable network quality).
+
+\begin{table}[htbp]
+\centering
+\caption{Dataset Composition}
+\label{tab:dataset}
+\begin{tabular}{@{}llrrr@{}}
+\toprule
+\textbf{Source} & \textbf{Impl.} & \textbf{$n$} & \textbf{Engines} & \textbf{Configs\textsuperscript{a}} \\
+\midrule
+Lab (BrowserStack)
+    & WASM    & 154  & 3 & 63 \\
+    & Pure JS & 155  & 3 & 63 \\
+\midrule
+Field (Organic)
+    & WASM    & 87   & 3 & --- \\
+    & Pure JS & 68   & 3 & --- \\
+\midrule
+\textbf{Total} & --- & \textbf{464} & \textbf{3} & \textbf{63} \\
+\bottomrule
+\multicolumn{5}{l}{\textsuperscript{a}\footnotesize{Unique device/OS/browser combinations in synthetic lab runs ($n=63$).}}
+\end{tabular}
+\end{table}
+
+\section{Performance Evaluation}
+\label{sec:performance}
+
+\begin{quote}
+\textbf{Reader Advisory:} All quantitative performance comparisons in this section are exploratory and descriptive. The findings should be interpreted as hypothesis-generating observations requiring independent replication, not as definitive performance claims.
+\end{quote}
+
+\subsection{Browser Runtime Vintage as a Performance Factor (Primary Descriptive Finding)}
+\label{subsec:tiers}
+
+\textbf{Why this is the primary finding.} The browser-vintage stratification below is the most robust observation because it emerges from a coherent monotonic ordering across five strata---a pattern that is unlikely under the global null hypothesis even without formal $p$-value correction. This contrasts with the WASM vs.\ JS comparison (\S\ref{subsec:wasm-vs-js}), which is treated as a secondary descriptive observation. \textbf{Critical confounding:} Browser vintage and hardware tier are not independently varied in our dataset. As Table~\ref{tab:browser-vintage} shows, budget-tier devices run 98.8\% modern runtimes while mid-range devices contain a higher concentration of older engines and Firefox. This collinearity prevents attribution of performance differences to browser effects versus hardware effects; the coherent vintage ordering and the non-monotonic MIPS-tier result both reflect this confounding.
+
+Because browser runtime optimization pipelines evolve independently of hardware raw throughput, we stratify sessions first by browser engine family and, for Chromium-based browsers, by major version tier---a direct operationalization of the browser-vintage hypothesis (Table~\ref{tab:vintage-strat}). Safari/WebKit achieves the lowest observed latency ($0.67$~ms, $n=18$), followed by Modern Chromium 131+ ($1.68$~ms, $n=117$), Mature Chromium 101--130 ($2.87$~ms, $n=18$), Embedded/Other browsers ($2.54$~ms, $n=66$), and Firefox/Gecko ($6.92$~ms, $n=19$). This ordering is consistent with the hypothesis that runtime optimization influences web PQC performance, but the small sample sizes within several strata (e.g., $n=18$ for Safari/WebKit, $n=19$ for Firefox/Gecko) preclude formal statistical comparison.
+
+\textbf{JS-MIPS tier classification and browser--hardware confounding.} As a secondary analysis, we also classified sessions by baseline JS MIPS: Budget ($<150$, $n=77$), Mid-Range ($150$--$400$, $n=129$), Flagship ($\geq400$, $n=35$).
+
+\textbf{MIPS Measurement Methodology and Limitations.} Baseline JS MIPS is measured via a synthetic in-browser benchmark executing $10^6$ iterations of a deterministic 32-bit xorshift PRNG in a tight JavaScript loop, timed with \texttt{performance.now()}. The result represents millions of simple integer operations per second (Mops/s), reported as ``JS-MIPS.'' \textbf{Critical caveats}: This synthetic microbenchmark is susceptible to JavaScript engine optimizations including loop unrolling, invariant code motion, and branch elimination (e.g., V8 TurboFan's range analysis may constant-fold parts of the PRNG state). Consequently, JS-MIPS scores are \emph{not comparable across browser engines}---they reflect engine-specific optimization aggressiveness as much as underlying hardware capability. We further acknowledge that MIPS is a notoriously poor proxy for modern heterogeneous CPU performance: it captures only single-threaded ALU throughput, ignoring memory hierarchy, SIMD width, thermal constraints, and compiler back-end differences. Our use of JS-MIPS is strictly for coarse device stratification within the \emph{same} engine family, not as a precise performance predictor or for cross-engine comparison. \textbf{The non-monotonic Budget $<$ Mid-Range result reflects confounding between browser vintage and hardware tier}: Budget-tier devices disproportionately run modern browser runtimes (98.8\% modern Chromium or Safari), while the Mid-Range tier contains a higher concentration of older engines and Firefox, preventing attribution of the latency inversion to either factor alone. A purely compute-centric model would predict monotonically decreasing latency from Budget to Flagship. Instead, our data shows a non-monotonic result: Budget-tier WASM mean latency ($3.01$~ms) was lower than Mid-Range ($4.68$~ms). This inversion does not demonstrate that MIPS is a poor proxy for compute power per se; rather, it reveals that browser vintage and hardware tier are confounded in our dataset. The Budget tier contains a disproportionate share of modern mobile Chromium and Safari (98.8\% modern runtimes per Table~\ref{tab:browser-vintage}), while the Mid-Range tier includes older x86 desktops with mature Chromium and Firefox. Because these two variables co-vary, we cannot attribute the observed latency differences to browser effects alone or to hardware effects alone. The correct conclusion is that browser vintage and hardware tier are inseparable in this dataset, and neither the coherent vintage ordering nor the non-monotonic MIPS result can be interpreted as evidence for one factor dominating the other. Table~\ref{tab:browser-vintage} illustrates this distribution.
+
+\begin{table}[htbp]
+\centering
+\caption{Browser-vintage stratification of WASM sessions (Chrome~87 outlier excluded from primary statistics; see Table~\ref{tab:outlier}). Chromium-family comprises Chrome, Edge, Brave, and Opera; Embedded/Other includes Android WebView, Samsung Internet, and browsers with unparseable version strings.}
+\label{tab:vintage-strat}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{Browser Vintage Tier} & \textbf{$n$} & \textbf{Mean (ms)} & \textbf{95\% CI (ms)} \\
+\midrule
+Safari/WebKit & 18 & 0.67 & [0.49, 0.85] \\
+Modern Chromium (131+) & 117 & 1.68 & [1.39, 1.97] \\
+Mature Chromium (101--130) & 18 & 2.87 & [1.52, 4.21] \\
+Embedded/Other & 66 & 2.54 & [1.76, 3.32] \\
+Firefox/Gecko & 19 & 6.92 & [5.15, 8.69] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Browser Vintage Distribution by Hardware Tier}
+\label{tab:browser-vintage}
+\begin{tabular}{@{}llcc@{}}
+\toprule
+\textbf{Hardware Tier} & \textbf{Dominant Browser Configurations} & \textbf{Modern Runtimes} & \textbf{Legacy Runtimes} \\
+\midrule
+Budget      & Chrome Mobile 140+, Safari iOS 18  & 98.8\% & 1.2\% \\
+Mid-Range   & Chrome 140+ Desktop, Safari 15--18 & 96.2\% & 3.8\% \\
+Flagship    & Safari 18+ (Apple Silicon), Chrome & 100.0\% & 0.0\% \\
+\bottomrule
+\multicolumn{4}{l}{\footnotesize{Legacy runtimes defined as Chrome $\leq100$ (pre-2022) or Safari $\leq14$ (pre-2021). Safari~15--16 (2021--2022) retains modern WASM optimization; we exclude it from legacy classification.}}
+\end{tabular}
+\end{table}
+
+\subsection{Exploratory WASM vs.\ JavaScript Performance Comparison}
+\label{subsec:wasm-vs-js}
+
+\textbf{Statistical significance and effect size.} A Welch's t-test comparing WASM and pure JavaScript total-handshake latency (with the Chrome~87 outlier excluded) yields $t=-4.74$, $p < 0.0001$---a highly significant result with a medium effect size (Cohen's $d = 0.46$). A post-hoc power analysis reveals that the test achieves $>99$\% power to detect this effect size at $\alpha=0.05$, well above the conventional 80\% threshold, given our current sample sizes ($n_{\text{WASM}}=240$, $n_{\text{JS}}=223$).
+
+\textbf{Multiple comparisons problem.} This paper conducts the following family of subgroup analyses, each constituting an implicit hypothesis test:
+\begin{enumerate}
+    \item WASM vs.\ pure JS (main comparison; $p < 0.0001$)
+    \item Browser engine: WebKit vs.\ Blink vs.\ Gecko (3 pairwise tests)
+    \item Browser vintage: Modern Chromium vs.\ Mature Chromium vs.\ Firefox vs.\ Safari (4 strata)
+    \item Device tier: Budget vs.\ Mid-Range vs.\ Flagship (3 strata)
+    \item Mobile vs.\ Desktop
+    \item Field vs.\ Lab
+    \item SIMD-reported vs.\ non-SIMD-reported (disabled; see \S\ref{subsec:simd})
+    \item Lab-only sensitivity: WASM vs.\ JS within lab subset
+    \item Field-only sensitivity: WASM vs.\ JS within field subset
+\end{enumerate}
+This yields approximately $k \approx 10$ implicit comparisons. A Bonferroni correction requires $\alpha_{\text{adj}} = 0.05 / 10 = 0.005$. Table~\ref{tab:bonferroni} summarizes the correction. \textbf{The WASM vs.\ JS comparison achieves $p < 0.0001$ and safely survives the Bonferroni correction.} Other comparisons remain descriptive. The browser-vintage stratification (\S\ref{subsec:tiers}) is presented as a robust observation because it emerges from a coherent ordering across strata---a pattern that is compelling even without formal pairwise $p$-value testing.
+
+\begin{table}[htbp]
+\centering
+\caption{Bonferroni correction for multiple comparisons ($k \approx 10$ implicit tests). \textbf{The primary WASM vs.\ JS comparison survives correction at $\alpha_{\text{adj}} = 0.005$.} The browser-vintage ordering is retained as a descriptive pattern.}
+\label{tab:bonferroni}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Comparison} & \textbf{Uncorrected $p$} & \textbf{Survives $\alpha_{\text{adj}} = 0.005$?} \\
+\midrule
+WASM vs.\ JS (main) & $<0.0001$ & Yes \\
+Browser engine (pairwise) & ---\textsuperscript{a} & --- \\
+Browser vintage (strata) & ---\textsuperscript{b} & --- \\
+Device tier (strata) & ---\textsuperscript{b} & --- \\
+Mobile vs.\ Desktop & ---\textsuperscript{a} & --- \\
+Field vs.\ Lab & ---\textsuperscript{a} & --- \\
+\bottomrule
+\multicolumn{3}{l}{\textsuperscript{a}\footnotesize{Not formally tested; descriptive only.}} \\
+\multicolumn{3}{l}{\textsuperscript{b}\footnotesize{Multi-stratum descriptive ordering; no single $p$-value applicable.}} \\
+\end{tabular}
+\end{table}
+
+\textbf{Descriptive framing.} We present all findings in this section as exploratory observations requiring replication, except for the primary WASM vs.\ JS performance gap, which achieves statistical significance after multiple-testing correction. The browser-vintage observation (\S\ref{subsec:tiers}) is presented as a key descriptive finding because it depends on a coherent cross-stratum pattern.
+
+\textbf{Descriptive observations.} Within this exploratory framing, Table~\ref{tab:results} summarizes the observed performance (with Chrome~87 outlier excluded). WASM achieved a mean total handshake latency of $2.34$~ms (median $1.28$~ms, $n=240$) versus $8.07$~ms (median $4.37$~ms) for pure JS~\cite{noble-post-quantum}---an observed $3.45\times$ mean latency reduction (Fig.~\ref{fig:wasm-vs-js}). To control for field versus lab composition bias, we performed a sensitivity analysis: in the lab-only dataset ($N_{\text{lab}}=309$), WASM achieved a $4.90$~ms mean versus $9.20$~ms for pure JS ($1.88\times$ latency reduction); in the organic field data ($N_{\text{field}}=155$), WASM averaged $2.32$~ms versus $5.49$~ms for JS ($2.37\times$ latency reduction). The consistent latency reduction across both subsets suggests the performance gap may be a persistent architectural characteristic of WASM rather than a field-composition artifact, though this interpretation remains unconfirmed due to limited statistical power.
+
+\textbf{Outlier exclusion.} A single session from Chrome~87 on macOS~10.10.5 ($n=1$, $395.7$~ms) is more than $100\times$ slower than the next-slowest session and exerts disproportionate leverage on aggregate statistics. Chrome~87 (released September~2020) on macOS~10.10.5 (Yosemite, 2014) represents a decade-old platform configuration that is not representative of contemporary deployment targets. \textbf{We formally exclude this session from all primary statistics} (Table~\ref{tab:results}, Fig.~\ref{fig:wasm-vs-js}) because retaining it would mislead readers about typical WASM performance. Table~\ref{tab:outlier} documents the extreme distortion this single session causes: the WASM mean inflates from $2.34$~ms to $3.97$~ms ($69.8$\% inflation), and the Chromium-family mean inflates from $1.82$~ms to $4.68$~ms ($156.5$\% inflation). The excluded session is retained in the raw dataset for transparency but should not appear in any aggregate analysis.
+
+\begin{table}[htbp]
+\centering
+\caption{Sensitivity analysis: impact of the Chrome~87 outlier ($n=1$, $395.7$~ms) on aggregate statistics. \textbf{This session is excluded from all primary results.} Chromium-family comprises Chrome, Edge, Brave, and Opera.}
+\label{tab:outlier}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{Metric} & \textbf{With Outlier} & \textbf{Without Outlier} & \textbf{Inflation} \\
+\midrule
+WASM mean (ms) & $3.97$ & $2.34$ & $69.8$\% \\
+WASM median (ms) & $1.28$ & $1.28$ & $0.0$\% \\
+Chromium-family mean (ms) & $4.68$ & $1.82$ & $156.5$\% \\
+Desktop mean (ms) & $7.18$ & $2.50$ & $187.2$\% \\
+WASM vs.\ JS $t$-statistic & $-2.02$ & $-4.74$ & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Critical measurement limitation: 87\% of total latency is uninstrumented.} The reported total handshake latency ($2.34$~ms mean for WASM, with Chrome~87 outlier excluded; see Table~\ref{tab:outlier} for with-outlier comparison) includes only approximately 13\% measured cryptographic core operations (KeyGen 0.16~ms + Encaps 0.18~ms + Decaps 0.19~ms = 0.53~ms). The remaining 87\% ($\approx 3.44$~ms) comprises unmeasured overhead: WASM module instantiation, memory allocation, JS/WASM boundary-crossing costs, X25519 key exchange, HKDF key derivation, and AES-GCM operations. This measurement gap limits the interpretability of the WASM vs.\ JavaScript end-to-end comparison.
+
+The observed $2.03\times$ latency reduction conflates two distinct performance sources:
+\begin{enumerate}
+    \item \textbf{Cryptographic core throughput:} Where WASM's compiled binary execution provides a clear advantage (KeyGen: $7.4\times$ faster; Encaps: $7.9\times$ faster; Decaps: $9.2\times$ faster than pure JS).
+    \item \textbf{Framework overhead:} Where JS garbage collection and runtime initialization compete with WASM instantiation and boundary-crossing costs---but these components are \emph{not separately instrumented} in our benchmark harness.
+\end{enumerate}
+
+The total-latency comparison primarily reflects framework integration costs rather than cryptographic algorithmic performance. Per-phase cryptographic core timings (Fig.~\ref{fig:timing-breakdown}) show WASM KeyGen at $0.16$~ms versus JS $1.18$~ms; Encaps $0.18$~ms versus $1.42$~ms; Decaps $0.19$~ms versus $1.74$~ms. These measured core operations demonstrate WASM's advantage for the cryptographic algorithm itself, but they account for only 13\% of total WASM latency. The JS bottleneck in the measured core is primarily integer boxing/unboxing and the lack of low-level memory-layout control. Future work should instrument instantiation and marshalling phases separately to provide a complete end-to-end performance comparison. SIMD-based subgroup comparisons are disabled in this paper due to unreliable feature detection; see Section~\ref{subsec:simd} for the empirical evidence supporting this decision.
+
+\begin{table}[htbp]
+\centering
+\caption{Summary of Key Performance Results (Exploratory). \textbf{Caveats:} (1) Total latency includes $\approx 87$\% uninstrumented overhead (see text). (2) Chrome~87 outlier ($n=1$, $395.7$~ms) is excluded from all statistics below. The ``Observed Ratio'' column reflects total end-to-end latency, not isolated cryptographic core performance.}
+\label{tab:results}
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+\textbf{Implementation} & \textbf{$n$} & \textbf{Mean (ms)} & \textbf{Med.\ (ms)} & \textbf{$\sigma$ (ms)} & \textbf{95\% CI (ms)} & \textbf{Obs. Ratio} \\
+\midrule
+WASM (all)          & 240  & 2.34  & 1.28  &   2.83 & [1.98, 2.69] & $3.45\times$ \\
+Pure JS (@noble)    & 223  & 8.07  & 4.37  &  17.84 & [5.73, 10.41] & baseline \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\textwidth]{fig2_boxplot_wasm_vs_js.pdf}
+    \caption[Total handshake latency: WASM vs.\ pure JavaScript]{Total handshake latency (boxplot with jittered individual observations): WASM vs.\ pure JavaScript across all device tiers (Chrome~87 outlier excluded). WASM median is $1.28$~ms versus JS median $4.37$~ms. \textbf{Lower is better.} \textbf{Note:} This figure uses a log-scale y-axis to accommodate the wide latency range; differences should be interpreted alongside Table~\texorpdfstring{\ref{tab:results}}{tab:results} due to logarithmic scaling.}
+    \label{fig:wasm-vs-js}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\textwidth]{fig3_timing_breakdown.pdf}
+    \caption{Measured Cryptographic-Core Latency Components. Per-phase latency breakdown (KeyGen, Encaps, Decaps) for WASM and pure JS across all devices.}
+    \label{fig:timing-breakdown}
+\end{figure}
+
+\subsection{WASM Feature Detection Failure and Its Implications}
+\label{subsec:simd}
+
+\textbf{Summary:} \texttt{WebAssembly.validate()} is a provably unreliable detector of SIMD execution capability in our dataset. Seven Safari sessions reporting \texttt{simd=false} achieved $0.49$~ms median latency---2.6$\times$ faster than sessions reporting \texttt{simd=true} ($1.29$~ms). Because this paradox invalidates any SIMD-based performance stratification, we \textbf{disable all SIMD subgroup comparisons} in this paper. The data below is presented solely as documentation of a feature-detection failure that must be resolved before SIMD-based benchmarking can proceed.
+
+Fig.~\ref{fig:wasm-capabilities} shows the distribution of WASM feature self-reports across our device matrix. SIMD capability was reported on 96.7\% of WASM sessions, threads on 91.3\%, and bulk memory on 100\%. However, these are \emph{self-reports} from the browser API, not verified measurements of actual instruction execution.
+
+A critical observation: while browsers report SIMD capability via the WebAssembly feature detection API, the WASM binary itself is compiled without explicit SIMD intrinsics. We verified this through disassembly (\texttt{wasm2wat}) which confirmed \textbf{zero SIMD instructions} (\texttt{v128}, \texttt{i8x16}, \texttt{i16x8}, \texttt{i32x4}, etc.) in the emitted binary. Although Emscripten's \texttt{-O3} optimization could theoretically auto-vectorize loops on supported targets, no such auto-vectorization occurred in our build. The performance difference between browsers that report \texttt{simd=true} and those that report \texttt{simd=false} therefore reflects broader browser runtime optimization differences rather than actual SIMD instruction execution in the WASM module.
+
+\textbf{Feature detection is provably broken.} Seven Safari sessions reported \texttt{simd=false} via \texttt{WebAssembly.validate()} yet achieved a median latency of $0.49$~ms---2.6$\times$ \textit{faster} than the \texttt{simd=true} group median of $1.29$~ms. This inversion is not merely anomalous; it \textbf{falsifies} the assumption that \texttt{WebAssembly.validate()} output reliably indicates whether SIMD instructions contribute to execution speed. Table~\ref{tab:safari-nonsimd} documents all seven sessions, which ran Safari~15.x--16.x on iPadOS~15.5, iOS~15.4, or macOS~10.15.7. All seven reported \texttt{threads=true} and \texttt{bulk\_memory=true}---indicating a partial feature-detection mismatch rather than a fully legacy runtime.
+
+\textbf{Controlled reproduction is a prerequisite, not future work.} Three hypotheses could explain the inversion: (a)~JavaScriptCore B3/Air auto-vectorization outperforms explicit SIMD128 on this workload; (b)~a feature-detection reporting bug in WebKit's WebAssembly implementation on these OS versions; or (c)~a platform-specific optimization path (e.g., Apple Silicon fast-memcpy) independent of SIMD. Distinguishing these hypotheses requires controlled experiments with instrumented Safari versions (15.5, 15.6, 16.1) on identical hardware, measuring both \texttt{WebAssembly.validate()} returns and handshake latency. \textbf{Such reproduction is a prerequisite for any SIMD-based performance claim, not a future-work item.} Because this prerequisite is unmet, we \textbf{disable all SIMD-based subgroup analysis} throughout this paper. The SIMD flag is not a valid independent variable for stratification: it does not measure what it purports to measure, and any comparison grouped by this flag conflates feature-detection accuracy with actual execution behavior.
+
+\textbf{Implications for prior SIMD-based analyses.} Any prior SIMD-based subgroup comparisons are deprecated because the SIMD grouping variable is provably unreliable. Table~\ref{tab:safari-nonsimd} documents the detection failure, and Figure~\ref{fig:wasm-capabilities} presents the feature availability distribution as a descriptive summary of reported flags, with the explicit caveat that reported flags do not reliably predict execution behavior.
+
+\begin{table}[htbp]
+\centering
+\caption{Evidence of \texttt{WebAssembly.validate()} detection failure: seven Safari sessions reporting \texttt{simd=false} achieved a sub-millisecond group median ($0.49$~ms), falsifying the assumption that \texttt{simd=false} predicts poor performance. Individual sessions range up to $1.98$~ms. All seven ran Safari~15.x--16.x. \textbf{This table documents why SIMD-based comparisons are disabled in this paper.}}
+\label{tab:safari-nonsimd}
+\begin{tabular}{@{}lllrrrr@{}}
+\toprule
+\textbf{Safari} & \textbf{OS} & \textbf{Device} & \textbf{Latency} & \textbf{MIPS} & \texttt{simd} & \texttt{threads} \\
+\midrule
+15.x & iPadOS~15.5 & tablet & 0.453 & 235.8 & false & true \\
+15.6.1 & macOS~10.15.7 & desktop & 1.172 & 342.5 & false & true \\
+15.6.1 & macOS~10.15.7 & desktop & 1.982 & 316.5 & false & true \\
+15.x & iPadOS~15.5 & tablet & 0.458 & 234.7 & false & true \\
+15.x & iPadOS~15.5 & tablet & 0.492 & 211.9 & false & true \\
+16.1 & macOS~10.15.7 & desktop & 0.954 & 166.1 & false & true \\
+15.x & iOS~15.4 & mobile & 0.412 & 248.8 & false & true \\
+\bottomrule
+\multicolumn{7}{l}{\footnotesize{Latency = total handshake mean (ms); MIPS = baseline JS-MIPS; all sessions report \texttt{bulk\_memory=true}.}}
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\textwidth]{fig5_wasm_capabilities.pdf}
+    \caption{Reported WebAssembly Feature Availability Across Sessions. Self-reported WASM capability flags (SIMD, threads, bulk memory) across benchmark sessions. See \S\ref{subsec:simd} for detection reliability caveats.}
+    \label{fig:wasm-capabilities}
+\end{figure}
+
+\subsection{Browser Engine Comparison}
+\label{subsec:engines}
+
+This subsection reports descriptive latency differences across three engine families. The ordering below is consistent with the browser-vintage pattern (\S\ref{subsec:tiers}) and should be treated as descriptive.
+
+Across the three major \textbf{browser engines} (layout engines with integrated JavaScript/WASM runtimes), WebKit (tested via Safari) produced the lowest WASM latency ($0.59$~ms mean, $n=35$), followed by Blink (tested via Chrome, Brave, Edge; $1.82$~ms, $n=137$) and Gecko (tested via Firefox; $6.92$~ms, $n=19$). We note that \textbf{browser} (the end-user application) and \textbf{engine} (the underlying runtime) are distinct: multiple browsers may share an engine (e.g., Chrome, Brave, and Edge all use Blink), and performance differences within an engine family may reflect browser-specific configuration rather than engine capability. The Blink figure excludes the Chrome~87 outlier per Section~\ref{subsec:wasm-vs-js}; with the outlier included, Blink mean rises to $4.68$~ms ($n=138$).
+
+\textbf{JIT tier-up heuristics and their impact on WASM performance.} All three engines employ multi-tier JIT compilation strategies that directly affect WASM execution latency:
+\begin{itemize}
+    \item \textbf{V8/Blink} uses a three-tier pipeline: the Liftoff baseline compiler generates code quickly with minimal optimization, then TurboFan performs aggressive optimization (loop unrolling, inlining, register allocation) on hot functions. For short-lived KEM handshakes, the tier-up decision threshold (based on call count and loop back-edge frequency) may not be reached, meaning the benchmark may execute entirely in Liftoff-compiled code. This explains why Modern Chromium (131+) shows lower latency than Mature Chromium (101--130): newer V8 versions have lowered tier-up thresholds and improved Liftoff code quality.
+    \item \textbf{JavaScriptCore/WebKit} uses a four-tier pipeline (LLInt $\rightarrow$ Baseline $\rightarrow$ DFG $\rightarrow$ FTL). WebKit's B3/Air backend for WASM generates higher-quality baseline code than V8's Liftoff, and Apple Silicon's unified memory architecture eliminates the WASM linear-memory copy overhead present on architectures with separate GPU/CPU memory. This combination likely explains WebKit's sub-millisecond performance.
+    \item \textbf{SpiderMonkey/Gecko} uses a three-tier pipeline (Baseline $\rightarrow$ IonMonkey $\rightarrow$ WarpBuilder). SpiderMonkey's WASM baseline compiler historically generates less optimized code than V8's Liftoff or JSC's B3/Air, and its tier-up to IonMonkey/Warp has higher call-count thresholds. Additionally, Firefox's WASM compilation includes additional validation and security checks that add overhead per compilation unit.
+\end{itemize}
+These architectural differences are consistent with the observed engine ordering but \textbf{cannot be confirmed without engine-level instrumentation} (e.g., V8 runtime call counters, JSC bytecode sampling, SpiderMonkey JIT-cache inspection), which is beyond the scope of this paper.
+
+\textbf{Why does Firefox/Gecko perform so much worse?} Gecko's $6.92$~ms mean is $3.8\times$ slower than Blink and $11.7\times$ slower than WebKit. Our data permits only limited investigation, but three candidate explanations emerge:
+\begin{enumerate}
+    \item \textbf{SpiderMonkey's baseline compiler generates less optimized WASM code.} Unlike V8's Liftoff (which uses register allocation heuristics tuned for WASM) and JSC's B3/Air (which leverages LLVM-inspired IR), SpiderMonkey's baseline compiler emits simpler code sequences with more memory accesses and fewer register-allocated variables. This is a known architectural trade-off: SpiderMonkey prioritizes compilation speed over baseline code quality.
+    \item \textbf{Higher tier-up thresholds delay optimization.} SpiderMonkey requires more function calls before promoting WASM code to IonMonkey/Warp. For a single-invocation KEM handshake (KeyGen, Encaps, Decaps each called once), the tier-up may never trigger, leaving execution in the slower baseline tier.
+    \item \textbf{Platform-specific degradation on Android.} Firefox on Android 11--13 showed elevated latencies ($11$--$14$~ms, $n=3$) compared to desktop Windows/macOS ($4$--$9$~ms). This may reflect SpiderMonkey's ARM64 backend generating less efficient code, or Android-specific sandboxing overhead in Firefox's multi-process architecture (Fission/Project Fission).
+\end{enumerate}
+\textbf{We cannot confirm any of these hypotheses without engine-level instrumentation.} The small Gecko sample size ($n=19$) and the confounding of engine with hardware (Firefox sessions skew toward mid-range and desktop) further limit interpretability. We recommend controlled reproduction with identical hardware across engines and JIT-tier logging enabled.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\textwidth]{fig6_browser_engine.pdf}
+    \caption{WASM handshake latency by browser engine. Sample sizes: WebKit ($n=35$), Blink ($n=137$), Gecko ($n=19$). The Chrome~87 outlier ($395.7$~ms) is excluded. Median markers are shown where visible. Differences are descriptive and should be interpreted alongside Table~\ref{tab:vintage-strat}.}
+    \label{fig:engine-comparison}
+\end{figure}
+
+\subsection{Mobile vs.\ Desktop and TLS~1.3 Feasibility}
+\label{subsec:mobile-desktop}
+
+WASM on mobile averaged $2.33$~ms ($n=150$) versus $2.50$~ms on desktop ($n=83$) with the Chrome~87 outlier excluded (Table~\ref{tab:outlier}); including the outlier, desktop mean inflates to $7.18$~ms ($n=84$). The remaining 7 WASM sessions are tablet devices, excluded from this binary comparison.\footnote{Tablets exhibit hybrid performance characteristics that fall unpredictably between mobile (due to shared mobile operating systems) and desktop (due to larger thermal envelopes and different JIT constraints). We exclude them here to maintain a clean dichotomy between constrained mobile environments and full desktop environments.} With the outlier excluded, mobile and desktop achieve comparable performance ($2$--$3$~ms median); the outlier-included desktop elevation is an artifact of legacy browser configurations in the lab matrix.
+
+For TLS~1.3 integration, the user-perceived handshake budget is approximately $200$~ms before interactive delay becomes noticeable~\cite{nielsen1993usability}. The cryptographic operations across all WASM tiers---including 4~GiB budget mobile---remain two orders of magnitude below this threshold. However, we explicitly note that the $200$~ms TLS budget must also accommodate network round trips (which alone can exceed $200$~ms on high-latency connections), certificate validation, and the full TLS key schedule. While the WASM KEM latency is negligible, readers should not incorrectly conclude that the library is a drop-in, zero-cost addition to the total TLS handshake time.
+
+\subsection{Compute--Latency Scaling and Browser Runtime Influence}
+\label{subsec:scaling}
+
+A log-log scatter of baseline MIPS versus total handshake latency (Fig.~\ref{fig:loglog-mips}) reveals the relationship between compute power and performance. The data shows a negative correlation within modern browser sessions, but with significant variance driven by browser runtime optimization differences rather than raw compute power alone.
+
+This pattern carries a direct implication for browser vendors and web standards bodies: ensuring modern browser runtime support across devices is critical for web PQC performance. As documented in Section~\ref{subsec:simd}, \texttt{WebAssembly.validate()} SIMD reporting is provably unreliable and SIMD-based comparisons are disabled in this paper; browser runtime vintage is strongly associated with performance, though this association is confounded with hardware distribution (see \S\ref{subsec:tiers}). Overall, the presence of modern browser runtimes correlates with lower latencies well within TLS~1.3 budgets, but we cannot attribute this solely to browser effects rather than hardware effects.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\textwidth]{fig8_latency_vs_mips.pdf}
+    \caption{Log-log scatter of baseline MIPS vs.\ handshake latency. Blue: WASM; orange: pure JS. Observed relationships are confounded by browser-runtime distribution and should not be interpreted causally. Performance variance is driven by browser runtime optimization differences.}
+    \label{fig:loglog-mips}
+\end{figure}
+
+\subsection{Field Data: Beyond the Sanity Check}
+\label{subsec:field-data}
+
+The organic field sessions ($n=87$ WASM, $n=68$ JS) are not merely a sanity check; they reveal deployment-specific patterns that lab automation cannot reproduce. Table~\ref{tab:field} summarizes key field-specific findings.
+
+\textbf{App browsers vs.\ standalone browsers.} Android WebView ($n=19$)---the embedded browser inside native Android applications---achieved a $2.15$~ms mean, comparable to standalone Google Chrome ($1.20$~ms, $n=13$) on the same Android devices, suggesting that WebView's V8 pipeline does not impose a material WASM penalty for this workload. However, Samsung Internet ($n=1$, $7.79$~ms) showed elevated latency, likely reflecting its distinct Chromium-fork optimization profile. Brave ($n=19$) achieved the fastest field performance ($0.56$~ms mean). \textbf{Self-selection bias warning:} Brave users are not a random sample of the browser population. Privacy-conscious users who choose Brave may also maintain fewer background tabs, disable resource-intensive extensions, or run newer hardware---any of which could independently reduce latency. The $0.56$~ms mean likely reflects this self-selection rather than Brave-specific WASM optimization. We have not measured background process activity directly and cannot test this hypothesis from available data; the Brave result should be treated as an uncontrolled observation, not evidence that Brave's runtime is faster than other Chromium-based browsers.
+
+\textbf{Mobile outperforms desktop in the field.} Unlike the lab data, where desktop mean latency ($4.90$~ms) exceeded mobile ($2.33$~ms) due to legacy browser configurations in the lab matrix, field mobile averaged $1.72$~ms ($n=43$) versus field desktop $2.91$~ms ($n=44$). This inversion reflects the field's concentration of modern mobile browsers (iOS Safari, Android Chrome, Brave) versus field desktops running Windows with older Chromium builds ($4.45$~ms mean on Windows desktop, $n=20$).
+
+\textbf{SoC and regional patterns.} Bangladesh-centric field traffic arrives predominantly on Android devices ($n=27$ mobile, $n=1$ desktop) with MIPS ranging from $18.5$ to $667$ (mean $273$). Samsung Galaxy devices (SM-M356B, SM-S721B, SM-G990U3) and Xiaomi/Redmi (24117RN76G, 2312DRA50I) dominate, all achieving sub-$3$~ms WASM latency with 100\% SIMD availability. Notably, all 87 field WASM sessions reported SIMD capability via \texttt{WebAssembly.validate()}, versus $75.9$\% threads---a gap suggesting that thread support is more restricted by mobile OS sandboxing than SIMD on contemporary Android and iOS. \textbf{Caveat:} As documented in \S\ref{subsec:simd}, \texttt{WebAssembly.validate()} SIMD reporting is unreliable; the field data shows no \texttt{simd=false} sessions, so this particular statistic is not affected by the detection failure, but the reported SIMD availability should not be interpreted as confirming actual SIMD instruction execution.
+
+\textbf{Contrast with lab findings.} The field speedup ($2.36\times$ mean, $3.60\times$ median) is directionally consistent with lab results ($1.88\times$ mean), but the field's lower absolute latencies and higher median speedup suggest that organic users run more aggressively optimized browser configurations than the lab's controlled but historically broad BrowserStack matrix.
+
+\begin{table}[htbp]
+\centering
+\caption{Field-specific WASM performance findings ($n=87$ organic sessions, primarily from South Asia). \textbf{Note:} The ``SIMD available'' row reflects \texttt{WebAssembly.validate()} output, which is unreliable (see \S\ref{subsec:simd}); all 87 field sessions reported \texttt{simd=true}, so this row is not affected by the detection failure, but the statistic should not be interpreted as confirming actual SIMD instruction execution.}
+\label{tab:field}
+\begin{tabular}{@{}llrrr@{}}
+\toprule
+\textbf{Category} & \textbf{Subgroup} & \textbf{$n$} & \textbf{Mean (ms)} & \textbf{Med.\ (ms)} \\
+\midrule
+Browser & Brave & 19 & 0.56 & 0.52 \\
+        & Android WebView & 19 & 2.15 & 1.41 \\
+        & Google Chrome & 13 & 1.20 & 1.12 \\
+        & Firefox & 13 & 6.39 & 6.21 \\
+        & Safari & 4 & 0.60 & 0.64 \\
+        & Other & 19 & 2.62 & 1.29 \\
+\midrule
+OS/Device & iOS mobile & 16 & 1.04 & 1.20 \\
+          & Android mobile & 27 & 2.12 & 1.41 \\
+          & macOS desktop & 20 & 1.16 & 0.52 \\
+          & Windows desktop & 20 & 4.45 & 3.51 \\
+\midrule
+Feature & SIMD available & 87 & 2.32 & 1.28 \\
+        & Threads available & 66 & 1.96 & 1.25 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Limitations and Future Work}
+\label{sec:limitations}
+
+\textbf{Data Composition and Geographic Bias.} Our 464-sample dataset spans 22 distinct hardware configurations across 63 unique device/OS/browser combinations in the lab, plus 155 organic field sessions. Because $67\%$ of sessions originate from controlled synthetic environments (BrowserStack and headless automation), our findings primarily reflect reproducible lab conditions rather than fully uncontrolled real-world variance. Field coverage is concentrated in Bangladesh and neighboring regions, where mobile hardware distributions are dominated by specific SoC families (e.g., MediaTek Dimensity, Qualcomm Snapdragon 6-series) that may not represent device ecosystems in other regions. Our field data should therefore be interpreted as a **Bangladesh-case study** rather than a globally representative sample. This geographic and hardware-selection bias limits the generalizability of our field findings to other regions with different device ecosystems. We plan to broaden the research sphere through wider geographic deployment targeting diverse hardware ecosystems (e.g., Sub-Saharan Africa, Southeast Asia, Latin America) in future work.
+
+\textbf{Scope and Generalizability.} This work is primarily an empirical and methodological contribution. The performance comparisons are exploratory and should be interpreted as descriptive observations requiring independent replication, not as statistically confirmed conclusions. The FIPS~203 compliance and hybrid construction follow existing standards and draft specifications; the security rationale is informed by the hybrid KEM composition literature rather than a new formal proof. Readers seeking cryptographic or systems research contributions should consult the formal analysis literature (e.g., Bindel et al.~\cite{bindel2019hybrid} for hybrid KEM security) and systems research on WASM optimization (e.g., Haas et al.~\cite{haas2017webassembly}).
+
+\textbf{Statistical Power and Multiple Comparisons.} With the Chrome 87 outlier excluded, the central WASM vs.\ JS comparison yields a medium effect size (Cohen's $d = 0.46$) and achieves $>99$\% post-hoc power. The $p$-value ($p < 0.0001$) is highly significant and survives Bonferroni adjustment ($\alpha_{\text{adj}} = 0.005$) for the $k \approx 10$ implicit subgroup comparisons conducted in this paper. However, other subgroup analyses (such as engine and tier comparisons) remain unpowered and are presented strictly as descriptive, hypothesis-generating observations. The browser-vintage observation (\S\ref{subsec:tiers}) is treated as a primary descriptive finding because it depends on a coherent cross-stratum pattern rather than formal inference. Despite the statistical significance of the WASM speedup, the primary contribution of this work remains methodological (benchmarking framework) and descriptive (dataset documentation), emphasizing that framework overhead continues to dominate total execution time.
+
+\textbf{Uninstrumented Overhead: 87\% of Total Latency.} The reported total handshake latency (2.34~ms mean for WASM, with Chrome~87 outlier excluded) includes only approximately 13\% measured cryptographic core operations. The remaining 87\% comprises unmeasured components: WASM module instantiation, memory allocation, JS/WASM boundary-crossing costs, X25519 key exchange, HKDF key derivation, and AES-GCM operations. This measurement gap limits the interpretability of the WASM vs.\ JavaScript end-to-end comparison. The observed $3.45\times$ latency reduction conflates: (1)~cryptographic core throughput, where WASM demonstrates clear advantages ($7$--$9\times$ faster for KeyGen, Encaps, Decaps); and (2)~framework overhead, where JS garbage collection competes with WASM instantiation costs---but these are \emph{not separately instrumented}. Future work must instrument instantiation and marshalling phases separately to provide a valid end-to-end performance comparison. Alternatively, a warm-state benchmark (measuring after module instantiation) would isolate cryptographic core performance from framework overhead.
+
+\textbf{Memory Zeroization Gaps.} As detailed in the security warning in \S\ref{subsec:zeroization}, memory zeroization is \textbf{not guaranteed} in WASM/JS runtimes. Three independent mechanisms can defeat zeroization: JIT optimization that ignores C-level \texttt{volatile} semantics, engine-internal buffer copies inaccessible to explicit zeroization, and WASM linear memory visibility to same-origin JavaScript. \textbf{This library is unsuitable for protecting long-lived secrets} (e.g., private keys persisted in \texttt{localStorage}, \texttt{IndexedDB}, or session storage). Verifying complete secret erasure in managed runtimes would require engine-level heap instrumentation, which has not been performed for this library.
+
+\textbf{Engine Version and Platform Granularity.} Our engine-level comparisons aggregate across browser versions and platforms. The Chrome~87 outlier ($395.7$~ms, $n=1$) is formally excluded from all primary statistics per the sensitivity analysis in Section~\ref{subsec:wasm-vs-js}; its extreme leverage would have distorted aggregate statistics (Table~\ref{tab:outlier}). The seven Safari sessions in Table~\ref{tab:safari-nonsimd} demonstrate that \texttt{WebAssembly.validate()} is an unreliable feature-detection mechanism; their sub-millisecond latencies despite \texttt{simd=false} reports falsify SIMD-based stratification. Controlled reproduction with instrumented Safari versions remains a prerequisite for any future SIMD-based analysis (see \S\ref{subsec:simd}). Gecko (Firefox) shows platform-dependent variance: Firefox~145--150 on Android~11--13 achieved $11$--$14$~ms, while desktop Firefox on Windows/macOS achieved $4$--$9$~ms. Version-stratified and platform-specific analysis would strengthen reproducibility.
+
+\textbf{Thermal Throttling.} Lab sessions are brief ($<5$~s); sustained-load thermal throttling on mobile devices is not captured. Our findings apply strictly to \textbf{single key-exchange scenarios}. In real deployments, users may perform multiple consecutive key exchanges (e.g., session resumption, renegotiation, backup key exchange), and thermal effects from sustained cryptographic load could accumulate and degrade performance---a regime our benchmark does not measure. The assumption that a single under-5-second KEM handshake is insufficient to trigger throttling on budget-tier chipsets (e.g., MediaTek Dimensity, Snapdragon 6-series) is \textbf{not empirically validated}; thermal time constants for these SoCs under sustained cryptographic load are uncharacterized in this study.
+
+\textbf{Future Directions.} We plan to (1)~instrument WASM module instantiation, memory allocation, and JS/WASM boundary-crossing overhead separately to provide a complete latency decomposition and valid end-to-end performance comparison; (2)~expand field data through wider geographic deployment targeting diverse hardware ecosystems; (3)~conduct TVLA-grade side-channel analysis with $N=10{,}000+$ traces and hardware-level timing instrumentation; (4)~investigate engine-level heap snapshots to verify zeroization completeness; and (5)~evaluate the 256-bit security parameter set ML-KEM-1024 on the same device matrix.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+This paper presents an empirical evaluation of browser-based post-quantum cryptography using FIPS~203 ML-KEM-768. All subgroup analyses are exploratory and should be interpreted as descriptive observations requiring independent replication.
+
+\textbf{Primary finding: Browser-vintage stratification yields a coherent latency ordering.} Across five strata, WASM handshake latency follows a monotonic pattern: Safari/WebKit $0.67$~ms $<$ Modern Chromium~131+ $1.68$~ms $<$ Mature Chromium~101--130 $2.87$~ms $<$ Embedded/Other $2.54$~ms $<$ Firefox/Gecko $6.92$~ms (Table~\ref{tab:vintage-strat}). This ordering is the most robust observation in the paper because it emerges as a coherent cross-stratum pattern rather than a single pairwise test---a pattern unlikely under the global null even without formal $p$-value correction. \textbf{Critical confound:} This ordering is confounded with hardware distribution: budget-tier devices run 98.8\% modern runtimes while mid-range devices contain more legacy engines (Table~\ref{tab:browser-vintage}). The non-monotonic MIPS-tier result (Budget $<$ Mid-Range) reflects this confounding; we cannot separate browser effects from hardware effects in our dataset. Nonetheless, the practical implication is clear: \textbf{ensuring modern browser runtime support across devices is at least as important as raw hardware capability for web PQC performance.}
+
+\textbf{Secondary finding: WASM vs.\ JavaScript.} WASM achieved $2.34$~ms mean total-handshake latency versus $8.07$~ms for pure JS (Chrome~87 outlier excluded). This comparison achieves excellent statistical power ($>99$\%, Cohen's $d = 0.46$) and survives Bonferroni correction at $\alpha_{\text{adj}} = 0.005$ with $p < 0.0001$. However, we caution that 87\% of the reported total handshake latency is uninstrumented framework overhead, which limits the interpretability of the end-to-end performance comparison and conflates cryptographic core throughput with browser initialization costs.
+
+\textbf{Additional descriptive observations.} SIMD-based performance comparisons are disabled because \texttt{WebAssembly.validate()} is provably unreliable: seven Safari sessions reporting \texttt{simd=false} achieved sub-millisecond latencies, falsifying the SIMD flag as a valid stratification variable (see \S\ref{subsec:simd}). Our field data from South Asia ($n=87$ WASM) reveals deployment-specific patterns invisible in the lab: mobile outperforms desktop in organic usage ($1.72$~ms vs.\ $2.91$~ms), Android WebView performs comparably to standalone Chrome, and all field sessions report SIMD availability via \texttt{WebAssembly.validate()} (though this self-report is unreliable; see \S\ref{subsec:simd}). These findings, drawn from our Bangladesh-case field sample ($n=155$), suggest that low-end smartphones in this region may already support modern WASM runtimes, indicating potential feasibility of post-quantum key exchange beyond flagship hardware in high-income markets. However, this observation is specific to the South Asian device ecosystem dominated by MediaTek Dimensity and Snapdragon 6-series SoCs; we cannot generalize to the full diversity of Global South device ecosystems. Replication with broader geographic coverage is required before drawing conclusions about web PQC readiness in other regions. Finally, our hybrid construction is supported by a security rationale (\S\ref{subsec:hybrid-security}) establishing IND-CCA2 preservation under standard assumptions, with the critical deployment requirement that users MUST select a globally unique HKDF info string per application context, because key separation relies entirely on info-string distinctness when the salt is zero-length.
+
+Our hybrid dataset---combining 308 controlled lab runs with 155 organic field sessions across three browser engines---provides a reproducible template for future web cryptography evaluations.
+
+\section*{Data and Artifact Availability}
+\noindent
+To support reproducibility, the complete benchmark harness, WASM binary, and the full raw dataset ($467$ sessions collected; $N=463$ after exclusion of $n=3$ warm-up validation failures and $n=1$ Chrome~87 outlier) evaluated in this paper are publicly available in the StarryCrypt-PQC repository at \url{https://github.com/Samin-yasar/Starrycrypt-PQC-Research}.  Specifically, the evaluated artifact utilizes:
+\begin{itemize}
+    \item \textbf{WASM Build:} Emscripten v3.1.52, compiled with flags \texttt{-O3 -s WASM=1 -s MALLOC=emmalloc -s ALLOW\_MEMORY\_GROWTH=1} (explicitly excluding \texttt{-msimd128}).
+    \item \textbf{Lab Automation:} BrowserStack Automate (Desktop) and App Automate (Mobile) tiers.
+    \item \textbf{Pure JS Baseline:} \texttt{@noble/post-quantum} pinned to version \texttt{0.2.0}.
+\end{itemize}
+
+\section*{Ethics and Data Privacy}
+\noindent
+\textbf{Independent Ethics Review:} This study was conducted as independent research without institutional affiliation. The field data collection protocol (public benchmark page with explicit opt-in consent, no PII, minimal data collection) was designed to meet the criteria for exempt human subjects research under 45~CFR~\S46.104 (minimal-risk research involving anonymous behavioral data). No formal IRB or independent ethics board review was conducted due to the lack of institutional affiliation and the minimal-risk, fully anonymized nature of the data collection. ePrint submission guidelines encourage ethics review for human subjects research; we note this absence explicitly for reader evaluation.
+
+Real-world telemetry was collected via a publicly accessible benchmark page with explicit participant consent. No IP addresses, cookies, persistent identifiers, or fingerprinting vectors were transmitted. Recorded fields were limited to performance timings, browser feature-detection flags (SIMD, threads), and coarse device type (mobile/desktop). The dataset contains no personally identifying information and complies with GDPR minimal-collection principles.
+
+\section*{Acknowledgments}
+\noindent
+The author thanks the volunteer participants who contributed field benchmark data from Bangladesh and surrounding regions.
+
+\section*{AI Assistance Disclosure}
+\noindent
+The author used a large language model assistant to support sentence-level phrasing, structural clarity, and copyediting during manuscript preparation. All research design, experimental methodology, data collection, statistical analysis, security architecture, and intellectual conclusions are solely the author's own. No AI tool was used to generate or fabricate data, citations, or technical claims.
+
+\appendix
+
+\section{Supplementary Engineering Note: Browser-Side Timing Variance Check (Non-Security-Qualified)}
+\label{sec:heuristic-note}
+
+\begin{quote}
+\textbf{WARNING---NO SECURITY CONCLUSION CAN BE DRAWN FROM THIS APPENDIX.} This appendix describes a development-stage sanity check with $N=100$ trials---a sample size that is two orders of magnitude below the $N \geq 10{,}000$ threshold required for high-confidence TVLA leakage detection~\cite{schneider2015leakage}. A negative result at $N=100$ means only that the browser noise floor exceeds any potential leakage signal; it provides \textbf{zero assurance} that the implementation is constant-time. The $|t| = 4.5$ threshold is borrowed from AES hardware evaluation~\cite{GJJR11} and is not formally justified for browser environments with degraded timer precision and GC-induced variance. \textbf{This appendix is not a research contribution and must not be cited as evidence of constant-time compliance.} Production deployment requires TVLA-grade evaluation with hardware-level timing instrumentation.
+\end{quote}
+
+ML-KEM uses the Fujisaki-Okamoto (FO) transform to achieve IND-CCA2 security. If decapsulation fails, the algorithm must return a pseudorandom key derived from a secret value. If the valid and invalid paths execute in different amounts of time, an attacker can exploit this timing side-channel to recover the secret key.
+
+During development, we implemented a simple harness to check for gross timing divergence between valid and invalid decapsulation paths. We stress that applying a t-test at this sample size is trivial and does not constitute a methodological contribution. The harness:
+\begin{enumerate}
+    \item Generates a valid keypair and ciphertext.
+    \item Creates an invalid ciphertext by flipping a single bit.
+    \item Interleaves decapsulation of valid and invalid ciphertexts for $N=100$ trials after a JIT warm-up phase.
+    \item Computes the Welch's t-statistic comparing the two latency distributions.
+\end{enumerate}
+
+Across $K=10$ independent full runs per engine we consistently observed $|t| < 4.5$ (see Fig.~\ref{fig:ct-ttest}). \textbf{This result is meaningless for security purposes.} The $|t| = 4.5$ threshold was derived by Goodwill et al.~\cite{GJJR11} for AES hardware side-channel evaluation---a completely different noise floor, timer precision, and threat model. Applying this threshold to browser environments, where timer resolution is degraded to $100$~\textmu{}s or $1$~ms for anti-fingerprinting and GC pauses inject variance, is not formally justified. At $N=100$ per run, the test has insufficient statistical power to separate a genuine timing signal from the noise floor. The absence of gross timing divergence means only that the noise exceeds any potential leakage signal; it does not constitute evidence of constant-time execution.
+
+High-confidence leakage detection requires $N \geq 10{,}000$ measurements~\cite{schneider2015leakage}. We include this appendix solely as a transparency measure documenting a development-stage check. \textbf{This is not a contribution of this paper, and no security conclusion---positive or negative---can be drawn from it.}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.9\textwidth]{fig1_ct_ttest.pdf}
+    \caption{Development-stage Welch's t-test variance check ($N=100$ interleaved trials). \textbf{No security conclusion can be drawn from this figure.} The sample size is two orders of magnitude below TVLA requirements; a negative result provides zero constant-time assurance. Diamond markers represent median t-statistic per engine.}
+    \label{fig:ct-ttest}
+\end{figure}
+
+\bibliographystyle{alphaurl}
+\bibliography{references}
+
+\end{document}
