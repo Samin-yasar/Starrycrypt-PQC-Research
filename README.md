@@ -17,7 +17,7 @@ StarryCrypt-PQC implements **ML-KEM-768** (FIPS 203) with **X25519 hybrid key ex
 
 - 🔐 **FIPS 203 Compliant**: NIST-standardized ML-KEM-768 implementation
 - 🔄 **Hybrid Key Exchange**: ML-KEM-768 + X25519 with HKDF-SHA-256
-- ⚡ **WASM Optimization**: 2.99× speedup over pure JavaScript
+- ⚡ **WASM Optimization**: 3.45× observed latency reduction over pure JavaScript
 - 📊 **Statistical Rigor**: 462 benchmark sessions across 22 hardware configurations
 - 🧪 **Constant-Time Testing**: Browser-native Welch's t-test harness
 - 📱 **Cross-Platform**: WebKit, Blink, Gecko support
@@ -35,8 +35,8 @@ StarryCrypt-PQC implements **ML-KEM-768** (FIPS 203) with **X25519 hybrid key ex
 
 ```bash
 # Clone the repository
-git clone https://github.com/Samin-yasar/starrycrypt-pqc.git
-cd starrycrypt-pqc
+git clone https://github.com/Samin-yasar/Starrycrypt-PQC-Research.git
+cd Starrycrypt-PQC-Research
 
 # Build the WASM module
 make all
@@ -81,7 +81,7 @@ const { ciphertext, sharedSecret } = await encapsulate(publicKey);
 ## Repository Structure
 
 ```
-starrycrypt-pqc/
+starrycrypt-pqc-research/
 ├── src/
 │   ├── wasm/              # C source for WASM compilation
 │   │   ├── kem.c          # ML-KEM-768 core implementation
@@ -145,13 +145,12 @@ python3 ../verify_stats.py
 
 ## Performance Results
 
-| Implementation | Mean Latency | Median | Speedup |
-|-----------------|--------------|--------|---------|
-| WASM (all) | 2.34 ms | 1.28 ms | **2.99×** |
-| WASM (SIMD-capable) | 2.38 ms | 0.72 ms | 2.94× |
-| Pure JavaScript | 6.99 ms | 4.37 ms | baseline |
+| Implementation | Mean Latency | Median | Observed Ratio |
+|-----------------|--------------|--------|----------------|
+| WASM (all) | 2.34 ms | 1.28 ms | **3.45×** |
+| Pure JavaScript | 8.07 ms | 4.37 ms | baseline |
 
-**Key Finding**: WASM delivers 2.99× speedup over pure JS, with modern SIMD-capable browsers achieving sub-2.5ms latency.
+**Key Finding**: WASM delivers 3.45× observed latency reduction over pure JS (2.34 ms vs 8.07 ms; p < 0.0001, survives Bonferroni correction). **Caveat**: ≈87% of total handshake latency is uninstrumented framework overhead; the cryptographic core advantage is 7–9×.
 
 ## Constant-Time Testing
 
@@ -202,7 +201,7 @@ If you use this code or data in your research, please cite:
 
 The repository includes our complete benchmark dataset (`data/starrycrypt_telemetry_2026-05-05.csv`):
 
-- **462 total sessions**: 240 WASM, 222 pure JS
+- **462 total sessions**: 240 WASM, 223 pure JS
 - **307 lab sessions**: Controlled synthetic runs (BrowserStack)
 - **155 field sessions**: Organic user benchmarks
 - **22 hardware configurations**: Budget to flagship devices
@@ -251,8 +250,8 @@ cd emsdk
 ./emsdk activate latest
 source ./emsdk_env.sh
 
-# Build StarryCrypt-PQC
-cd /path/to/starrycrypt-pqc
+# Build Starrycrypt-PQC
+cd /path/to/starrycrypt-pqc-research
 make all
 ```
 
@@ -288,7 +287,7 @@ MIT License - see [LICENSE](LICENSE) file.
 ## Contact
 
 - **Research**: research@samin-yasar.dev
-- **Issues**: [GitHub Issues](https://github.com/Samin-yasar/starrycrypt-pqc/issues)
+- **Issues**: [GitHub Issues](https://github.com/Samin-yasar/Starrycrypt-PQC-Research/issues)
 - **Paper**: IACR ePrint (link TBD)
 
 ---
