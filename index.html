@@ -654,13 +654,13 @@
       <span class="gradient-text">The SIMD Performance Cliff</span>
     </h1>
     <p class="hero-desc">
-      A statistical evaluation of <strong>FIPS 203 ML-KEM-768</strong> hybrid key exchange across <strong>462</strong> organic and lab-controlled browser sessions. Our central finding: WASM delivers consistent sub-5ms latency across modern devices, with older legacy browsers showing significant degradation.
+      A statistical evaluation of <strong>FIPS 203 ML-KEM-768</strong> hybrid key exchange across <strong>462</strong> browser sessions (67% lab-controlled). WASM achieves <strong>3.45× observed latency reduction</strong> over pure JS (2.34 ms vs 8.07 ms), though 87% of total handshake latency is uninstrumented framework overhead—cryptographic core operations show <strong>7–9× speedup</strong>.
     </p>
 
     <div class="hero-stats-row">
       <div class="stat-pill">
-        <div class="stat-val">2.99×</div>
-        <div class="stat-lbl">WASM vs JS Speedup</div>
+        <div class="stat-val">3.45×</div>
+        <div class="stat-lbl">WASM vs JS Observed Ratio</div>
       </div>
       <div class="stat-pill">
         <div class="stat-val">462</div>
@@ -679,7 +679,7 @@
       <span class="section-tag">Headline Finding</span>
       <h2 class="section-title">WASM vs JavaScript Performance</h2>
       <p class="section-desc">
-        WebAssembly delivers a <strong>2.99× speedup</strong> over pure JavaScript for ML-KEM-768 operations. Modern browsers with WASM SIMD support achieve sub-millisecond latency, while legacy browser analysis reveals substantial variance: seven Safari non-SIMD sessions achieved median 0.49ms, while one legacy Chrome 87 configuration showed an anomalous 395.7ms latency (formally excluded from means).
+        WebAssembly delivers a <strong>3.45× observed latency reduction</strong> over pure JavaScript for ML-KEM-768 operations (2.34 ms vs 8.07 ms; p &lt; 0.0001, survives Bonferroni correction). However, <strong>87% of total handshake latency is uninstrumented framework overhead</strong>—the cryptographic core advantage is 7–9×. Browser-vintage stratification reveals a coherent latency ordering across five strata, and SIMD-based comparisons are disabled due to unreliable <code>WebAssembly.validate()</code> feature detection.
       </p>
     </div>
 
@@ -699,23 +699,23 @@
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
           </div>
           <h3>WASM: Sub-5ms Execution</h3>
-          <p>WebAssembly executes the FIPS 203 ML-KEM-768 hybrid handshake in a mean of <strong>2.34 ms</strong> (median 1.28 ms), with modern Chromium-based engines averaging <strong>1.82 ms</strong>.</p>
+          <p>WebAssembly executes the FIPS 203 ML-KEM-768 hybrid handshake in a mean of <strong>2.34 ms</strong> (median 1.28 ms), with modern Chromium-based engines averaging <strong>1.82 ms</strong>. <em>Caveat: Only 13% of this latency is measured cryptographic core; 87% is uninstrumented framework overhead.</em></p>
         </div>
 
         <div class="insight-card">
           <div class="insight-icon">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h4l3-9 5 18 3-9h5"></path></svg>
           </div>
-          <h3>Legacy Browser Analysis</h3>
-          <p>Among the 8 non-SIMD sessions, seven Safari sessions on iOS/iPadOS 15 achieved median <strong>0.49 ms</strong> (comparable to SIMD browsers), while one legacy Chrome 87 configuration on macOS 10.10.5 showed an anomalous <strong>395.7 ms</strong> latency—likely a browser-era WASM implementation issue.</p>
+          <h3>Legacy Browser &amp; SIMD Detection</h3>
+          <p>One Chrome 87 session on macOS 10.10.5 (WASM: <strong>395.7 ms</strong>, n=1) is formally excluded as an outlier. Seven Safari sessions reporting <code>simd=false</code> achieved sub-millisecond latencies, proving <code>WebAssembly.validate()</code> is unreliable for SIMD stratification.</p>
         </div>
 
         <div class="insight-card">
           <div class="insight-icon">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
           </div>
-          <h3>Global South Feasibility</h3>
-          <p>Field data confirms budget SoC tiers commonly found in the Global South fully support modern WASM features, enabling TLS 1.3 compliance globally without requiring flagship hardware.</p>
+          <h3>Browser-Vintage &amp; Global South</h3>
+          <p>Browser-vintage stratification yields a coherent latency ordering: Safari 0.67 ms &lt; Modern Chromium 1.68 ms &lt; Mature Chromium 2.87 ms &lt; Firefox 6.92 ms. Field data from South Asia (n=155) confirms budget SoC tiers support modern WASM runtimes—though this is a Bangladesh-case study, not globally representative.</p>
         </div>
       </div>
     </div>
@@ -770,7 +770,7 @@
         <div class="data-row">
           <div class="data-item">
             <span class="data-lbl">Mean</span>
-            <span class="data-val" style="color: var(--accent-amber);">6.99 ms</span>
+            <span class="data-val" style="color: var(--accent-amber);">8.07 ms</span>
           </div>
           <div class="data-item">
             <span class="data-lbl">KeyGen</span>
@@ -812,7 +812,7 @@
           <div class="f-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></div>
           <h4>JIT Warm-up Isolation</h4>
         </div>
-        <p>Web engines interpret initially, compiling hot paths later. We enforce 5 discarded pre-computation cycles before initiating N=50 timed iterations to measure true algorithmic throughput without JIT spikes.</p>
+        <p>We enforce a <strong>time-based 200 ms warm-up</strong> phase (empirically validated: CV stabilizes below 5% after 150–180 ms across all engines) before collecting N=50 timed iterations. Sessions where the first timed iteration exceeded 150% of session median are flagged and excluded (n=3, 0.6%).</p>
       </div>
 
       <div class="feature-card">
@@ -820,7 +820,7 @@
           <div class="f-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg></div>
           <h4>Memory Zeroization Protocol</h4>
         </div>
-        <p>A defense-in-depth approach utilizing C <code>volatile memset</code> wrappers to bypass dead-store elimination, paired with synchronous JavaScript <code>Uint8Array.fill(0)</code> post-derivation zeroing.</p>
+        <p>C <code>volatile memset</code> wrappers paired with JS <code>Uint8Array.fill(0)</code> zeroing. <em>Warning: Zeroization is not guaranteed—JIT optimization, engine-internal buffer copies, and WASM linear memory visibility to same-origin JS can defeat it. Unsuitable for long-lived secrets.</em></p>
       </div>
 
       <div class="feature-card">
@@ -874,7 +874,7 @@
         data: {
           labels: ['WASM (Modern)', 'Pure JavaScript', 'WASM (Legacy)*'],
           datasets: [{
-            data: [2.38, 6.99, 50.20],
+            data: [2.38, 8.07, 50.20],
             backgroundColor: [gSimd, gJs, gScalar],
             borderColor: ['#22d3ee', '#f59e0b', '#f43f5e'],
             borderWidth: 1,
