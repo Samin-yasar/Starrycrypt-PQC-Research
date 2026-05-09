@@ -16,7 +16,7 @@ All notable changes to this project will be documented in this file.
 - IACR ePrint submission ready
 
 ### Performance
-- WASM achieves 2.03× speedup over pure JavaScript (3.97ms vs 8.07ms)
+- WASM achieves 3.45× observed latency reduction over pure JavaScript (2.34ms vs 8.07ms, outlier excluded)
 - SIMD-capable browsers: 2.38ms mean latency
 - Mobile devices achieve sub-2.5ms latency with modern browsers
 
@@ -25,7 +25,7 @@ All notable changes to this project will be documented in this file.
 - Secure memory zeroization via WASM
 - FIPS 203 compliant domain separation
 
-## [1.0.0] - 2024 (Pre-release)
+## [1.0.0] - 2025 (Pre-release)
 
 ### Added
 - Initial ML-KEM implementation (Kyber Round 3)
