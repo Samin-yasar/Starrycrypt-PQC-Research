@@ -1,0 +1,55 @@
+# Emscripten SDK (large — install locally per README)
+emsdk/
+
+# Node dependencies (analysis scripts only)
+node_modules/
+package-lock.json
+
+
+# Supabase schema — contains DB structure, do not commit
+supabase/
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.suo
+
+# Environments
+.env
+.env.*
+
+# LaTeX build files
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+!paper/main.pdf
+
+# AI Assistants and Agents
+.agents/
+.claude/
+.devin/
+.windsurf/
+.mcp.json
+skills-lock.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+
+# NOTE: dist/ is intentionally NOT ignored.
+# The compiled mlkem768.js + mlkem768.wasm are committed so Vercel
+# can serve them without a build step. Recompile with `make` after
+# any C source changes and commit the updated dist/.
+pqclean/
