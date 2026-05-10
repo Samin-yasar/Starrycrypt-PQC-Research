@@ -16,7 +16,7 @@ def load_data(filepath):
             rows.append(row)
     return rows
 
-rows = load_data('../performance_data/starrycrypt_telemetry_2026-05-05.csv')
+rows = load_data('performance_data/starrycrypt_telemetry_2026-05-05.csv')
 
 wasm_all = [r['total_handshake_mean'] for r in rows if r['implementation'] == 'wasm']
 wasm_no_c87 = [r['total_handshake_mean'] for r in rows if r['implementation'] == 'wasm' and not (r['browser_name'] == 'Chrome' and r['browser_version'].startswith('87') and r['os_name'] == 'macOS')]

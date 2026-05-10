@@ -62,7 +62,7 @@ def welch_ttest(a, b):
     df = num / den if den > 0 else n1 + n2 - 2
     return t, df
 
-rows = load_data('../performance_data/starrycrypt_telemetry_2026-05-05.csv')
+rows = load_data('performance_data/starrycrypt_telemetry_2026-05-05.csv')
 
 # Correct lab/field classification
 lab = [r for r in rows if r['device_model'].startswith('[LAB]')]

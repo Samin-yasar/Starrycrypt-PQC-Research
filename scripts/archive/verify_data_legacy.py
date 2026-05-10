@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """
-Comprehensive audit of every numerical claim in paper.tex
-against the raw telemetry CSV.
+[DEPRECATED] Legacy data audit against an earlier paper draft.
+
+This script references the 2026-05-03 telemetry dataset and an older
+version of the paper (N=412 sessions). It is preserved for historical
+transparency only.
+
+For the current canonical verification, use:
+    python3 scripts/verify_data.py
 """
 import pandas as pd
 import numpy as np

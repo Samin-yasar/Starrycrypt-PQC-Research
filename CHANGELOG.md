@@ -15,6 +15,13 @@ All notable changes to this project will be documented in this file.
   - `analysis/_get_stats.py` (referenced stale 2026-05-03 CSV)
   - `analyze_data_simple.py` (referenced stale 2026-05-03 CSV)
   - `analysis/revision_analysis.py` (superseded by `revision_analysis_corrected.py` and `revision_analysis_stdlib.py`)
+- Renamed `run/` → `benchmark/` for clarity; removed stale duplicate `benchmark/` directory
+- Reorganized Python scripts into professional structure:
+  - `scripts/verify_data.py` — canonical stdlib-only verification (from `verify_data_pure.py`)
+  - `scripts/explore_data.py` — pandas-based data exploration (from `analyze_data.py`)
+  - `scripts/archive/verify_data_legacy.py` — deprecated audit against old dataset
+  - `analysis/statistical_tests.py` — Welch's t-test, Cohen's d, CI computation (from `analysis/verify_stats.py`)
+  - Standardized all data paths to `performance_data/...` (relative to repo root)
 - Date corrections: internal report timestamps aligned to release date (2026-05-06 → 2026-05-10)
 
 ### Fixed

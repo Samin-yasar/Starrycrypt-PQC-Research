@@ -43,7 +43,7 @@ make all
 
 # Serve locally for testing
 make serve
-# Then open http://localhost:8080/run/
+# Then open http://localhost:8080/benchmark/
 ```
 
 ### Using the Library
@@ -115,7 +115,7 @@ starrycrypt-pqc/
 
 1. Build the WASM module: `make all`
 2. Start local server: `make serve`
-3. Open `http://localhost:8080/run/` in target browser
+3. Open `http://localhost:8080/benchmark/` in target browser
 4. Benchmark runs automatically and downloads results as JSON
 
 ### Run Headless Benchmarking
@@ -139,8 +139,8 @@ pip install pandas matplotlib numpy scipy
 # Generate figures
 python3 generate_figures.py
 
-# Verify statistics
-python3 ../verify_stats.py
+# Run statistical tests (Welch's t-test, Cohen's d, confidence intervals)
+python3 statistical_tests.py
 ```
 
 ## Performance Results
@@ -260,8 +260,8 @@ make all
 # Verify FIPS 203 compliance test vectors
 node tests/verify_vectors.js
 
-# Run statistical verification
-python3 verify_stats.py
+# Run canonical data verification
+python3 scripts/verify_data.py
 ```
 
 ## Contributing
