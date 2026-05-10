@@ -2,6 +2,7 @@
 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20111815.svg)](https://doi.org/10.5281/zenodo.20111815)
 [![WASM](https://img.shields.io/badge/WebAssembly-✓-654FF0)](https://webassembly.org/)
 [![FIPS 203](https://img.shields.io/badge/FIPS%20203-Compliant-green)](https://csrc.nist.gov/projects/post-quantum-cryptography)
 
@@ -76,6 +77,61 @@ import { generateKeypair, encapsulate, decapsulate } from './src/js/purejs-wrapp
 // Same API as WASM version
 const { publicKey, secretKey } = await generateKeypair();
 const { ciphertext, sharedSecret } = await encapsulate(publicKey);
+```
+
+## How to Run
+
+### 1. Build the WASM Module
+
+Requires [Emscripten](https://emscripten.org/) installed and activated:
+
+```bash
+make all          # compiles src/wasm/*.c → dist/mlkem768.js + dist/mlkem768.wasm
+make clean       # removes compiled output
+```
+
+### 2. Run the Browser Benchmark
+
+```bash
+make serve       # starts python3 HTTP server on port 8080
+```
+
+Then open in your browser:
+- **WASM benchmark**: `http://localhost:8080/benchmark/`
+- **Pure JS benchmark**: `http://localhost:8080/benchmark/pure-js.html`
+
+The benchmark runs automatically and downloads results as JSON.
+
+### 3. Run the Dashboard
+
+Open `http://localhost:8080/dashboard/` (requires `make serve` running).
+
+### 4. Reproduce Paper Figures & Statistics
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install pandas matplotlib numpy scipy
+
+# Generate figures
+cd analysis && python3 generate_figures.py
+
+# Run statistical tests
+python3 statistical_tests.py
+```
+
+Or use the Makefile (requires an active venv at `.venv/`):
+
+```bash
+make figures     # generates figures from telemetry CSV
+make paper       # builds paper PDF (pdflatex → bibtex → pdflatex ×2)
+```
+
+### 5. Verify Data Integrity
+
+```bash
+python3 scripts/verify_data.py
+python3 scripts/explore_data.py
 ```
 
 ## Repository Structure
@@ -187,12 +243,15 @@ combinedSS = HKDF-SHA-256(ML-KEM-768 SS ∥ X25519 SS, "hybrid-kex", 32)
 If you use this code or data in your research, please cite:
 
 ```bibtex
-@misc{yasar2026starrycrypt,
+@software{yasar2026starrycrypt,
   author       = {Yasar, Samin},
-  title        = {Evaluating Web-Based Post-Quantum Cryptography: 
-                  A Statistical Analysis of {ML-KEM-768} in Controlled Browser Environments},
+  title        = {StarryCrypt-PQC: Web-Based ML-KEM-768 Implementation and Telemetry Dataset},
+  month        = may,
   year         = {2026},
-  note         = {Preprint}
+  publisher    = {Zenodo},
+  version      = {v2.0.1},
+  doi          = {10.5281/zenodo.20111815},
+  url          = {https://doi.org/10.5281/zenodo.20111815}
 }
 ```
 
