@@ -1,7 +1,7 @@
 # StarryCrypt-PQC
 
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20111815.svg)](https://doi.org/10.5281/zenodo.20111815)
 [![WASM](https://img.shields.io/badge/WebAssembly-✓-654FF0)](https://webassembly.org/)
 [![FIPS 203](https://img.shields.io/badge/FIPS%20203-Compliant-green)](https://csrc.nist.gov/projects/post-quantum-cryptography)
@@ -333,7 +333,7 @@ Contributions welcome! Please open an issue or PR for:
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file.
+Apache License 2.0 - see [LICENSE](LICENSE) file.
 
 ## Acknowledgments
 
