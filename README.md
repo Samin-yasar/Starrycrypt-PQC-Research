@@ -189,7 +189,7 @@ pip install pandas matplotlib numpy scipy
 python3 generate_figures.py
 
 # Run statistical tests (Welch's t-test, Cohen's d, confidence intervals)
-python3 statistical_tests.py
+python3 analysis/statistical_tests.py
 ```
 
 ## Performance Results
