@@ -117,7 +117,7 @@ pip install pandas matplotlib numpy scipy
 cd analysis && python3 generate_figures.py
 
 # Run statistical tests
-python3 statistical_tests.py
+python3 analysis/statistical_tests.py
 ```
 
 Or use the Makefile (requires an active venv at `.venv/`):
@@ -155,11 +155,13 @@ starrycrypt-pqc/
 ├── benchmark/             # Benchmarking harness
 │   ├── index.html
 │   └── pure-js.html
-├── data/                  # Telemetry dataset
+├── performance_data/      # Telemetry dataset
 │   └── starrycrypt_telemetry_2026-05-05.csv
 ├── analysis/              # Figure generation
 │   ├── figures/           # Generated PDFs/PNGs
-│   └── scripts/           # Python analysis scripts
+│   └── *.py               # Python analysis scripts
+├── scripts/               # Utility scripts
+├── dashboard/             # Results visualization dashboard
 ├── docs/                  # Documentation
 ├── paper/                 # LaTeX paper source
 └── Makefile               # Build automation
@@ -173,15 +175,6 @@ starrycrypt-pqc/
 2. Start local server: `make serve`
 3. Open `http://localhost:8080/benchmark/` in target browser
 4. Benchmark runs automatically and downloads results as JSON
-
-### Run Headless Benchmarking
-
-For automated testing across multiple browsers:
-
-```bash
-cd scripts/
-node run_browserstack.js  # Requires BrowserStack credentials
-```
 
 ### Reproducing Paper Figures
 
@@ -257,7 +250,7 @@ If you use this code or data in your research, please cite:
 
 ## Telemetry Dataset
 
-The repository includes our complete benchmark dataset (`data/starrycrypt_telemetry_2026-05-05.csv`):
+The repository includes our complete benchmark dataset (`performance_data/starrycrypt_telemetry_2026-05-05.csv`):
 
 - **462 total sessions**: 240 WASM, 223 pure JS
 - **307 lab sessions**: Controlled synthetic runs (BrowserStack)
@@ -316,9 +309,6 @@ make all
 ### Running Tests
 
 ```bash
-# Verify FIPS 203 compliance test vectors
-node tests/verify_vectors.js
-
 # Run canonical data verification
 python3 scripts/verify_data.py
 ```

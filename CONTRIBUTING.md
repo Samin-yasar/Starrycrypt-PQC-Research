@@ -21,7 +21,7 @@ If you find a bug or have a suggestion:
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/your-feature`)
 3. Make your changes
-4. Run tests and verification (`make test`)
+4. Run verification (`python3 scripts/verify_data.py`)
 5. Commit with clear messages
 6. Push to your fork
 7. Open a pull request
@@ -53,8 +53,8 @@ Before submitting:
 # Build WASM
 make all
 
-# Run verification
-make verify-stats
+# Run data verification
+python3 scripts/verify_data.py
 
 # Generate figures (if modifying analysis)
 make figures
