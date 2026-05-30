@@ -7,8 +7,8 @@
 [![FIPS 203](https://img.shields.io/badge/FIPS%20203-Compliant-green)](https://csrc.nist.gov/projects/post-quantum-cryptography)
 
 **Web-Based Post-Quantum Cryptography: A Statistical Analysis of ML-KEM-768 in Controlled Browser Environments**
-
-This repository contains the implementation, benchmarking harness, and analysis code for the paper *"Evaluating Web-Based Post-Quantum Cryptography: A Statistical Analysis of ML-KEM-768 in Controlled Browser Environments"* (Preprint, 2026).
+x
+This repository contains the implementation, benchmarking harness, and analysis code for the paper *"Evaluating Web-Based Post-Quantum Cryptography: A Statistical Analysis of ML-KEM-768 in Controlled Browser Environments"* (SSRN)[https://ssrn.com/abstract=6744539], May 2026).
 
 ## Overview
 
@@ -346,7 +346,7 @@ Apache License 2.0 - see [LICENSE](LICENSE) file.
 
 - **Research**: research@samin-yasar.dev
 - **Issues**: [GitHub Issues](https://github.com/Samin-yasar/starrycrypt-pqc/issues)
-- **Paper**: Preprint (link TBD)
+- **Paper**: (SSRN)[https://ssrn.com/abstract=6744539]
 
 ---
 
