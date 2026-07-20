@@ -1,9 +1,14 @@
 # Data Integrity and Statistical Verification Report
 
-**Artifact:** StarryCrypt-PQC v2.0.1  
+**Artifact:** StarryCrypt-PQC v2.0.2  
 **Dataset:** `performance_data/starrycrypt_telemetry_2026-05-05.csv`  
-**Date:** 2026-05-10  
-**Verification Tool:** `verify_data.py` (reproducible Python script included in this repository)
+**Verification Tool:** `scripts/verify_data.py` (stdlib-only; Python 3.8+, no external dependencies)  
+**Analysis Tool:** `analysis/statistical_tests.py` (numpy, scipy; formal hypothesis tests)
+
+| Revision | Date | Change |
+|----------|------|--------|
+| 1.0 | 2026-05-10 | Initial release (v2.0.1) |
+| 1.1 | 2026-07-20 | Updated artifact version; added document history table; expanded §9 zeroization limitation |
 
 ---
 
@@ -136,7 +141,7 @@ The script reads `performance_data/starrycrypt_telemetry_2026-05-05.csv` and rep
 1. **Uninstrumented overhead:** 87% of measured handshake latency is browser-managed framework cost, not cryptographic core execution.
 2. **SIMD feature detection unreliability:** `WebAssembly.validate()` self-reports do not reliably predict actual SIMD execution. SIMD-based subgroup comparisons are deprecated in this release.
 3. **Lab-dominant dataset:** 67% of sessions are controlled lab runs (BrowserStack). Field findings represent a Bangladesh case study, not a globally representative sample.
-4. **Zeroization limitations:** Browser JIT optimization and runtime memory management may silently defeat explicit zeroization.
+4. **Zeroization limitations:** Explicit `.fill(0)` calls in JavaScript and `mlkem_zeroize()` in the WASM heap use a `volatile`-pointer memset to resist dead-store elimination. However, JIT-compiled JavaScript engines, garbage collectors, and browser-managed ArrayBuffer lifetime may copy or retain secret material in regions the application cannot control. This implementation provides best-effort zeroization; it does not constitute a formal cryptographic memory-safety guarantee. See `src/wasm/randombytes.c` §ZEROIZATION for the WASM-side rationale.
 5. **Constant-time screening only:** The Welch's t-test harness provides developmental screening, not production-grade side-channel resistance. Formal TVLA validation is required for deployment.
 6. **Small non-SIMD sample:** n = 8 total (Safari n = 7, Chrome n = 1) is insufficient for robust vendor-specific conclusions.
 
