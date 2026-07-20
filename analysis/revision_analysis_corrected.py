@@ -1,7 +1,49 @@
 #!/usr/bin/env python3
 """
-Corrected revision analysis for reviewer points M1-M5.
-Properly classifies lab vs field using device_model.startswith('[LAB]').
+revision_analysis_corrected.py — Corrected Field vs. Lab Analysis (M1–M5).
+
+OVERVIEW
+--------
+This script corrects the lab/field classification error discovered during
+the revision process. The original analysis (revision_analysis_stdlib.py)
+used ``device_model == '[LAB]'`` (exact match) for lab detection, which
+missed entries tagged as ``'[LAB] MacBook Pro 14"'`` or similar compound
+strings. This script uses ``device_model.startswith('[LAB]')`` instead.
+
+The script addresses reviewer comments M1 through M5 from the post-submission
+review, focusing specifically on the field data distribution:
+
+  M1 — SAMPLE PROVENANCE
+       Correct counts of lab vs. field sessions, verifying the claim that
+       the majority of sessions originate from uncontrolled (field) devices.
+
+  M2 — FIELD DATA REPRESENTATIVE COVERAGE
+       Browser, OS, device-type, and device-model breakdowns for field
+       WASM sessions, verifying geographic/hardware diversity.
+
+  M5 — FIELD VS. LAB PERFORMANCE COMPARISON
+       Mean, median, and std for field and lab data separately; speedup
+       ratios; SIMD availability in field sessions.
+
+STDLIB-ONLY DESIGN
+------------------
+This script uses only Python standard library modules (csv, math, collections)
+to ensure reproducibility on systems that may not have numpy/pandas installed.
+This matches the ``scripts/verify_data.py`` design philosophy for data
+verification scripts that reviewers and editors may run independently.
+
+USAGE
+-----
+    python3 analysis/revision_analysis_corrected.py
+
+Input:  performance_data/starrycrypt_telemetry_2026-05-05.csv
+        (path must be relative to the repository root or where the script
+         is invoked from)
+Output: printed to stdout.
+
+DEPENDENCIES
+------------
+    Python >= 3.8 standard library only (csv, math, collections).
 """
 
 import csv
@@ -9,6 +51,18 @@ import math
 from collections import defaultdict
 
 def load_data(filepath):
+    """
+    Load the telemetry CSV and cast all numeric and boolean fields.
+
+    Numeric fields default to 0.0 on missing or non-parseable values.
+    Boolean fields are parsed from the string ``'true'`` (case-insensitive).
+
+    Args:
+        filepath (str): Path to the telemetry CSV.
+
+    Returns:
+        list[dict]: List of row dicts with typed fields.
+    """
     rows = []
     with open(filepath, 'r') as f:
         reader = csv.DictReader(f)
@@ -18,17 +72,26 @@ def load_data(filepath):
                         'timer_precision_ms']:
                 try:
                     row[key] = float(row[key]) if row[key] else 0.0
-                except:
+                except Exception:
                     row[key] = 0.0
             for key in ['wasm_simd', 'wasm_threads', 'wasm_bulk_memory', 'wasm_relaxed_simd', 'tab_visible']:
-                row[key] = row[key].lower() == 'true'
+                row[key] = row.get(key, '').lower() == 'true'
             rows.append(row)
     return rows
 
+
 def mean(data):
+    """Return the arithmetic mean of a list of floats. Returns 0.0 for empty input."""
     return sum(data) / len(data) if data else 0.0
 
+
 def median(data):
+    """
+    Return the median of a list of floats.
+
+    Uses the standard definition: middle value for odd n, average of the
+    two middle values for even n. Returns 0.0 for empty input.
+    """
     s = sorted(data)
     n = len(s)
     if n == 0:
@@ -37,13 +100,32 @@ def median(data):
         return s[n // 2]
     return (s[n // 2 - 1] + s[n // 2]) / 2
 
+
 def std(data):
+    """
+    Return the sample standard deviation (ddof=1) of a list of floats.
+
+    Returns 0.0 if fewer than 2 values are provided.
+    """
     if len(data) < 2:
         return 0.0
     m = mean(data)
     return math.sqrt(sum((x - m) ** 2 for x in data) / (len(data) - 1))
 
+
 def ci95(data):
+    """
+    Compute the 95% confidence interval for the mean of a list of floats.
+
+    Uses a z = 1.96 approximation (valid for n >= 30). For small samples,
+    see the t-distribution-based CI in statistical_tests.py.
+
+    Args:
+        data (list[float]): Sample observations.
+
+    Returns:
+        tuple[float, float]: (lower_bound, upper_bound) of the 95% CI.
+    """
     if len(data) < 2:
         return (0.0, 0.0)
     m = mean(data)
@@ -51,7 +133,22 @@ def ci95(data):
     margin = 1.96 * s / math.sqrt(len(data))
     return (m - margin, m + margin)
 
+
 def welch_ttest(a, b):
+    """
+    Compute the Welch t-statistic and Welch-Satterthwaite degrees of freedom.
+
+    Does not compute the p-value (stdlib-only; use statistical_tests.py with
+    scipy for exact p-values). Returns (t=0.0, df=n1+n2-2) if the standard
+    error is zero (identical samples or n=1).
+
+    Args:
+        a (list[float]): Group 1 observations.
+        b (list[float]): Group 2 observations.
+
+    Returns:
+        tuple[float, float]: (t_statistic, welch_satterthwaite_df).
+    """
     m1, m2 = mean(a), mean(b)
     s1, s2 = std(a), std(b)
     n1, n2 = len(a), len(b)

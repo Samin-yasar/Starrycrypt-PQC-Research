@@ -1,17 +1,88 @@
 /**
- * ML-KEM-768 (FIPS 203) Pure JS Hybrid Wrapper
- * Uses @noble/post-quantum for pure JS ML-KEM.
+ * @file purejs-wrapper.js
+ * @module purejs-wrapper
+ * @description ML-KEM-768 (FIPS 203) Pure-JavaScript Hybrid Key Exchange Wrapper.
+ *
+ * Provides an API-compatible alternative to mlkem768-wrapper.js that replaces
+ * the Emscripten/WASM ML-KEM-768 implementation with the @noble/post-quantum
+ * pure-JavaScript implementation. The hybrid construction, Web Crypto
+ * operations (X25519, HKDF-SHA-256, AES-256-GCM), benchmarking API, and
+ * hardware metadata collection are identical to the WASM variant.
+ *
+ * PURPOSE
+ * -------
+ * This wrapper enables a direct research comparison between two implementation
+ * strategies on the same device and browser:
+ *
+ *   - WASM variant  (mlkem768-wrapper.js): Emscripten-compiled C reference
+ *     implementation from PQClean, running in the WebAssembly VM. Expected to
+ *     be faster on Chromium-based browsers with WASM SIMD support.
+ *
+ *   - Pure-JS variant (this file): @noble/post-quantum v0.6.1, a TypeScript
+ *     implementation authored by Paul Miller. Expected to be slower but
+ *     requires no WASM compilation and works in environments where WASM is
+ *     restricted (e.g., some CSP policies, iOS WKWebView without WASM).
+ *
+ * API COMPATIBILITY
+ * -----------------
+ * All exports match mlkem768-wrapper.js exactly. The benchmark page switches
+ * between implementations by swapping the import URL; no other changes are
+ * needed.
+ *
+ * HARDWARE METADATA
+ * -----------------
+ * getHardwareMeta() is reproduced inline rather than shared via import to
+ * avoid cross-module dependency issues between the two standalone benchmark
+ * HTML pages. Both implementations will always report identical hardware
+ * metadata for the same session, ensuring comparability.
+ *
+ * MEMORY SAFETY
+ * -------------
+ * @noble/post-quantum operates entirely in JS heap memory. Secret keys and
+ * shared secrets returned by this module should be zeroized (.fill(0)) by the
+ * caller after use, as with the WASM variant. Unlike the WASM variant, there
+ * is no separate heap zeroization step since there is no WASM linear memory.
+ *
+ * @see src/js/mlkem768-wrapper.js for the WASM variant.
+ * @see docs/API.md for the full JavaScript API reference.
+ * @see https://github.com/paulmillr/noble-post-quantum for @noble/post-quantum.
+ * @see NIST FIPS 203 (ML-KEM), RFC 5869 (HKDF), RFC 8446 §4.2.8 (X25519).
  */
 import { ml_kem768 } from 'https://esm.sh/@noble/post-quantum@0.6.1/ml-kem';
 
-const MLKEM_PUBLICKEYBYTES = 1184;
-const MLKEM_SECRETKEYBYTES = 2400;
+/**
+ * ML-KEM-768 parameter sizes (NIST FIPS 203, Table 2).
+ * Identical to mlkem768-wrapper.js and src/wasm/params.h.
+ * @see src/wasm/params.h
+ */
+/** Public key byte length — 1184 bytes. */
+const MLKEM_PUBLICKEYBYTES  = 1184;
+/** Secret key byte length — 2400 bytes. */
+const MLKEM_SECRETKEYBYTES  = 2400;
+/** Ciphertext byte length — 1088 bytes. */
 const MLKEM_CIPHERTEXTBYTES = 1088;
-const MLKEM_SSBYTES = 32;
+/** Shared secret byte length — 32 bytes. */
+const MLKEM_SSBYTES         = 32;
 
-/** Load the module. No-op for pure JS since it's an ES import. */
+/**
+ * loadModule — no-op for the pure-JS variant.
+ *
+ * Provided for API compatibility with mlkem768-wrapper.js. Since
+ * @noble/post-quantum is a static ES import, no async initialization
+ * is required. Returns true to signal readiness.
+ *
+ * @returns {Promise<true>}
+ */
 export async function loadModule() { return true; }
 
+/**
+ * mlkemKeyGen — ML-KEM-768 key pair generation via @noble/post-quantum.
+ *
+ * @returns {Promise<{pk: Uint8Array, sk: Uint8Array, timeMs: number}>}
+ *   pk      — 1184-byte public key.
+ *   sk      — 2400-byte secret key (MUST be zeroized by caller after use).
+ *   timeMs  — execution time in milliseconds (performance.now() delta).
+ */
 export async function mlkemKeyGen() {
     const t0 = performance.now();
     const keys = ml_kem768.keygen();
@@ -19,6 +90,16 @@ export async function mlkemKeyGen() {
     return { pk: keys.publicKey, sk: keys.secretKey, timeMs: t1 - t0 };
 }
 
+/**
+ * mlkemEncaps — ML-KEM-768 encapsulation via @noble/post-quantum.
+ *
+ * @param {Uint8Array} pk — 1184-byte ML-KEM-768 public key.
+ * @returns {Promise<{ct: Uint8Array, ss: Uint8Array, timeMs: number}>}
+ *   ct      — 1088-byte ciphertext.
+ *   ss      — 32-byte shared secret (MUST be zeroized by caller after use).
+ *   timeMs  — execution time in milliseconds.
+ * @throws {Error} If pk.length !== 1184.
+ */
 export async function mlkemEncaps(pk) {
     if (pk.length !== MLKEM_PUBLICKEYBYTES) throw new Error('Bad pk length');
     const t0 = performance.now();
@@ -27,6 +108,20 @@ export async function mlkemEncaps(pk) {
     return { ct: res.cipherText, ss: res.sharedSecret, timeMs: t1 - t0 };
 }
 
+/**
+ * mlkemDecaps — ML-KEM-768 decapsulation via @noble/post-quantum.
+ *
+ * If the ciphertext is invalid, the FO implicit rejection mechanism returns
+ * a pseudo-random value derived from the secret key and a rejection hash.
+ * This function never throws for invalid ciphertexts.
+ *
+ * @param {Uint8Array} ct — 1088-byte ciphertext.
+ * @param {Uint8Array} sk — 2400-byte ML-KEM-768 secret key.
+ * @returns {Promise<{ss: Uint8Array, timeMs: number}>}
+ *   ss      — 32-byte shared secret (MUST be zeroized by caller after use).
+ *   timeMs  — execution time in milliseconds.
+ * @throws {Error} If ct.length !== 1088 or sk.length !== 2400.
+ */
 export async function mlkemDecaps(ct, sk) {
     if (ct.length !== MLKEM_CIPHERTEXTBYTES) throw new Error('Bad ct length');
     if (sk.length !== MLKEM_SECRETKEYBYTES) throw new Error('Bad sk length');
@@ -36,7 +131,14 @@ export async function mlkemDecaps(ct, sk) {
     return { ss, timeMs: t1 - t0 };
 }
 
-/** Check if X25519 is supported by the browser's WebCrypto implementation. */
+/**
+ * checkX25519Support — probe whether Web Crypto supports the X25519 algorithm.
+ *
+ * Result is cached after the first call. Returns false on older browsers
+ * (Firefox < 120, Safari < 15.4, any non-HTTPS context).
+ *
+ * @returns {Promise<boolean>} true if X25519 key generation succeeds.
+ */
 let _x25519Supported = null;
 export async function checkX25519Support() {
     if (_x25519Supported !== null) return _x25519Supported;
@@ -49,14 +151,34 @@ export async function checkX25519Support() {
     return _x25519Supported;
 }
 
-/* --- Same Web Crypto logic below as WASM version --- */
+/* ── Web Crypto wrappers (identical to mlkem768-wrapper.js) ─────────────── */
 
+/**
+ * x25519KeyGen — generate an ephemeral X25519 key pair via Web Crypto API.
+ *
+ * The private key is returned as an opaque CryptoKey handle (non-extractable
+ * after export for x25519Derive). The public key is exported as a raw 32-byte
+ * Uint8Array for transmission.
+ *
+ * @returns {Promise<{publicKey: Uint8Array, privateKey: CryptoKey}>}
+ */
 export async function x25519KeyGen() {
     const kp = await crypto.subtle.generateKey({ name: 'X25519' }, true, ['deriveBits']);
     const pub = new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey));
     return { publicKey: pub, privateKey: kp.privateKey };
 }
 
+/**
+ * x25519Derive — compute X25519 shared secret via Web Crypto deriveBits.
+ *
+ * Rejects all-zero shared secrets per RFC 8446 §4.2.8, which indicates
+ * a small-order or all-zero peer public key (invalid per RFC 7748 §6.1).
+ *
+ * @param {CryptoKey}  privateKey    — local X25519 private key (CryptoKey).
+ * @param {Uint8Array} peerPublicKey — remote X25519 public key (32 bytes, raw).
+ * @returns {Promise<Uint8Array>} 32-byte shared secret.
+ * @throws {Error} If the derived shared secret is all-zero.
+ */
 export async function x25519Derive(privateKey, peerPublicKey) {
     const pub = await crypto.subtle.importKey('raw', peerPublicKey, { name: 'X25519' }, false, []);
     const bits = await crypto.subtle.deriveBits({ name: 'X25519', public: pub }, privateKey, 256);
@@ -68,6 +190,15 @@ export async function x25519Derive(privateKey, peerPublicKey) {
     return ss;
 }
 
+/**
+ * hkdfSha256 — HKDF-SHA-256 key derivation (RFC 5869) via Web Crypto API.
+ *
+ * @param {Uint8Array|ArrayBuffer} ikm    — Input key material.
+ * @param {Uint8Array|ArrayBuffer} salt   — Optional salt (empty Uint8Array for no salt).
+ * @param {Uint8Array|ArrayBuffer} info   — Context/application-specific info string.
+ * @param {number}                 outLen — Output length in bytes (default 32).
+ * @returns {Promise<Uint8Array>} Derived key material of length outLen.
+ */
 export async function hkdfSha256(ikm, salt, info, outLen = 32) {
     const base = await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits']);
     const bits = await crypto.subtle.deriveBits({
@@ -79,18 +210,48 @@ export async function hkdfSha256(ikm, salt, info, outLen = 32) {
     return new Uint8Array(bits);
 }
 
+/**
+ * aesGcmEncrypt — AES-256-GCM authenticated encryption via Web Crypto API.
+ *
+ * @param {Uint8Array} key       — 32-byte AES-256 key.
+ * @param {Uint8Array} plaintext — Plaintext to encrypt.
+ * @param {Uint8Array} iv        — 12-byte initialization vector (must be unique per key use).
+ * @returns {Promise<Uint8Array>} Ciphertext concatenated with 16-byte GCM authentication tag.
+ */
 export async function aesGcmEncrypt(key, plaintext, iv) {
     const cryptoKey = await crypto.subtle.importKey('raw', key, 'AES-GCM', false, ['encrypt']);
     const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, cryptoKey, plaintext);
     return new Uint8Array(ciphertext);
 }
 
+/**
+ * aesGcmDecrypt — AES-256-GCM authenticated decryption via Web Crypto API.
+ *
+ * @param {Uint8Array} key        — 32-byte AES-256 key.
+ * @param {Uint8Array} ciphertext — Ciphertext with 16-byte GCM authentication tag appended.
+ * @param {Uint8Array} iv         — 12-byte initialization vector used during encryption.
+ * @returns {Promise<Uint8Array>} Plaintext.
+ * @throws {DOMException} OperationError if authentication tag is invalid.
+ */
 export async function aesGcmDecrypt(key, ciphertext, iv) {
     const cryptoKey = await crypto.subtle.importKey('raw', key, 'AES-GCM', false, ['decrypt']);
     const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, cryptoKey, ciphertext);
     return new Uint8Array(plaintext);
 }
 
+/**
+ * deriveSessionKey — X25519MLKEM768 hybrid shared-secret → AES-256-GCM session key.
+ *
+ * Concatenates mlkemSS ∥ x25519SS (ML-KEM first, per draft-ietf-tls-ecdhe-mlkem-04
+ * §4.3) and derives a 32-byte key via HKDF-SHA-256. The intermediate buffer
+ * is zeroized before returning. Identical to mlkem768-wrapper.js.
+ *
+ * @param {Uint8Array} mlkemSS  — 32-byte ML-KEM-768 shared secret.
+ * @param {Uint8Array} x25519SS — 32-byte X25519 shared secret.
+ * @param {Uint8Array} [context] — HKDF info string for domain separation.
+ * @returns {Promise<Uint8Array>} 32-byte AES-256 session key.
+ * @throws {Error} If either input is not exactly 32 bytes.
+ */
 export async function deriveSessionKey(mlkemSS, x25519SS, context = new TextEncoder().encode('Starrycrypt-PQC v1 | X25519MLKEM768 | AES-256-GCM')) {
     if (mlkemSS.length !== 32 || x25519SS.length !== 32) throw new Error('Bad SS lengths');
     const combined = new Uint8Array(64);
@@ -333,6 +494,20 @@ function _measureBaselineMips() {
     return ms <= 0 ? null : +((N / ms) / 1000).toFixed(2);
 }
 
+/**
+ * runHandshake — execute one complete X25519MLKEM768 hybrid handshake.
+ *
+ * API-compatible with mlkem768-wrapper.js runHandshake(). Performs:
+ *   1. ML-KEM-768 KeyGen + Encaps + Decaps (via @noble/post-quantum)
+ *   2. X25519 KeyGen + Derive (via Web Crypto API)
+ *   3. HKDF-SHA-256 hybrid key derivation
+ *   4. AES-256-GCM encrypt + decrypt (1024-byte payload)
+ *
+ * Returns per-operation timing and a keysMatch boolean indicating whether
+ * Alice and Bob derived the same session key (correctness signal).
+ *
+ * @returns {Promise<{keysMatch: boolean, timing: object, sizes: object}>}
+ */
 export async function runHandshake() {
     const hasX25519 = await checkX25519Support();
 

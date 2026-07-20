@@ -1,4 +1,43 @@
 #!/usr/bin/env python3
+"""
+explore_data.py — Exploratory Data Analysis (EDA) of Telemetry Data.
+
+OVERVIEW
+--------
+A pandas/numpy-based EDA script used during initial data exploration before
+writing the analysis scripts in analysis/. Provides a quick top-level
+summary of the telemetry dataset including:
+
+  - Dataset size and implementation split
+  - Overall handshake latency statistics (mean, median)
+  - WASM SIMD vs. non-SIMD subgroup statistics and speedup ratio
+  - Per-phase timing (KeyGen, Encaps, Decaps) for both implementations
+  - Browser engine breakdown (Blink, WebKit, Gecko)
+  - Mobile vs. Desktop comparison
+  - Field vs. Lab session classification
+  - WASM feature availability (SIMD, Threads, Bulk Memory)
+
+RELATIONSHIP TO OTHER SCRIPTS
+------------------------------
+  - This script is an EDA tool, not a claims-verification tool.
+  - Use scripts/verify_data.py (stdlib-only) for independent claim verification.
+  - Use analysis/statistical_tests.py for formal statistical tests (Welch t,
+    Cohen's d, confidence intervals).
+  - Use analysis/generate_figures.py to generate publication figures.
+
+USAGE
+-----
+    # Run from the repository root:
+    python3 scripts/explore_data.py
+
+Input:  performance_data/starrycrypt_telemetry_2026-05-05.csv
+Output: printed to stdout.
+
+DEPENDENCIES
+------------
+    pandas >= 1.3
+    numpy  >= 1.21
+"""
 import pandas as pd
 import numpy as np
 
@@ -53,6 +92,15 @@ print()
 # Browser engine analysis
 print("=== Browser Engine Analysis ===")
 def categorize_engine(browser_name):
+    """
+    Map a browser name string to its JS engine family.
+
+    Args:
+        browser_name (str): Browser name as stored in the telemetry CSV.
+
+    Returns:
+        str: One of 'Blink', 'WebKit', 'Gecko', or 'Other'.
+    """
     if browser_name in ['Chrome', 'Google Chrome', 'Microsoft Edge', 'Brave']:
         return 'Blink'
     elif browser_name in ['Safari', 'Samsung Internet']:

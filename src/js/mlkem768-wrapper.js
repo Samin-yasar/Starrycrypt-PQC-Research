@@ -64,12 +64,29 @@
  * @see NIST FIPS 203 (ML-KEM), RFC 8446 §4.2.8 (X25519), RFC 5869 (HKDF).
  */
 
-const MLKEM_PUBLICKEYBYTES = 1184;
-const MLKEM_SECRETKEYBYTES = 2400;
+/**
+ * ML-KEM-768 parameter sizes as defined in NIST FIPS 203, Table 2.
+ * These are compile-time constants; changing them would select a different
+ * security level and requires a matching WASM rebuild.
+ *
+ * ML-KEM-768 targets NIST Security Category 3 (~AES-192 classical / Grover's
+ * quantum security). The sizes below must exactly match params.h in the
+ * corresponding WASM build.
+ *
+ * @see src/wasm/params.h
+ */
+/** Public key byte length — 1184 bytes (FIPS 203, §7.1). */
+const MLKEM_PUBLICKEYBYTES  = 1184;
+/** Secret key byte length — 2400 bytes (FIPS 203, §7.1). */
+const MLKEM_SECRETKEYBYTES  = 2400;
+/** Ciphertext byte length — 1088 bytes (FIPS 203, §7.2). */
 const MLKEM_CIPHERTEXTBYTES = 1088;
-const MLKEM_SSBYTES = 32;
+/** Shared secret byte length — 32 bytes (FIPS 203, §7.3). */
+const MLKEM_SSBYTES         = 32;
 
+/** Cached Emscripten module instance; null until loadModule() completes. */
 let Module = null;
+/** In-flight initialization Promise; prevents double-loading when called concurrently. */
 let moduleLoadPromise = null;
 
 /**
@@ -101,6 +118,25 @@ export async function loadModule(wasmUrl = './dist/mlkem768.js') {
     return Module;
 }
 
+/**
+ * _doLoadModule — internal one-shot initializer for the Emscripten module.
+ *
+ * Injects the Emscripten JS glue file as a classic <script> tag (not a dynamic
+ * import) so that window.MLKEMModule is set in global scope and Emscripten can
+ * resolve the companion .wasm path via document.currentScript.src. Once the
+ * script is loaded, the factory function is invoked, the returned
+ * Module/Promise is awaited, and the resulting object's HEAPU8 heap is
+ * validated before returning.
+ *
+ * Failure modes:
+ *   - Network 404 on mlkem768.js → onerror fires → Error thrown.
+ *   - window.MLKEMModule not a function after script load → Error thrown.
+ *   - .wasm file 404 (Emscripten fetch failure) → Module.HEAPU8 absent → Error thrown.
+ *
+ * @private
+ * @param {string} wasmUrl — URL of the Emscripten JS glue file.
+ * @returns {Promise<EmscriptenModule>}
+ */
 async function _doLoadModule(wasmUrl) {
     // mlkem768.js is an Emscripten classic (non-module) build.  Loading it via
     // dynamic import() would return an empty module with no .default export,
@@ -407,9 +443,32 @@ export async function aesGcmDecrypt(key, ciphertext, iv) {
 }
 
 /**
- * Hybrid key derivation: ML-KEM ss || X25519 ss -> HKDF-SHA-256 -> AES-256-GCM key.
- * Concatenation order follows draft-ietf-tls-ecdhe-mlkem-04 §4.3 (ML-KEM first).
- * Info string provides application-level domain separation per RFC 5869 §3.2.
+ * deriveSessionKey — X25519MLKEM768 hybrid shared-secret → AES-256-GCM session key.
+ *
+ * Derives a 256-bit session key by concatenating the two component shared
+ * secrets and passing the result through HKDF-SHA-256:
+ *
+ *   IKM  = mlkemSS ∥ x25519SS    (64 bytes; ML-KEM first per §4.3)
+ *   salt = "" (empty, per RFC 5869 §3.1 when no shared context exists)
+ *   info = CONTEXT_STRING         (application domain separation)
+ *   OKM  = HKDF-SHA-256(IKM, salt, info, 32)  → AES-256 key
+ *
+ * Concatenation order (ML-KEM first) follows draft-ietf-tls-ecdhe-mlkem-04
+ * §4.3. This means that even if X25519 is fully broken by a classical
+ * adversary, the ML-KEM component still contributes entropy to the output.
+ * Likewise, if ML-KEM is broken (future cryptanalytic attack), X25519 still
+ * provides classical forward secrecy.
+ *
+ * The intermediate combined buffer is zeroized before returning to prevent
+ * leaving 64 bytes of key material on the JS heap.
+ *
+ * @param {Uint8Array} mlkemSS  — 32-byte ML-KEM-768 shared secret.
+ * @param {Uint8Array} x25519SS — 32-byte X25519 shared secret.
+ * @param {Uint8Array} [context] — HKDF info field. Default encodes the
+ *   application context string for domain separation.
+ * @returns {Promise<Uint8Array>} 32-byte AES-256 session key.
+ *   MUST be zeroized by the caller after use.
+ * @throws {Error} If mlkemSS.length !== 32 or x25519SS.length !== 32.
  */
 export async function deriveSessionKey(mlkemSS, x25519SS, context = new TextEncoder().encode('Starrycrypt-PQC v1 | X25519MLKEM768 | AES-256-GCM')) {
     if (mlkemSS.length !== 32 || x25519SS.length !== 32) throw new Error('Bad SS lengths');
@@ -733,7 +792,47 @@ function _measureBaselineMips() {
 }
 
 /**
- * Run one full handshake cycle and return benchmark JSON.
+ * runHandshake — execute one complete X25519MLKEM768 hybrid handshake.
+ *
+ * Performs the following sequence and returns per-operation timing data:
+ *
+ *   1. ML-KEM-768 KeyGen      (Alice)
+ *   2. X25519 KeyGen           (Alice + Bob)
+ *   3. ML-KEM-768 Encaps       (Alice → Bob)
+ *   4. ML-KEM-768 Decaps       (Bob)
+ *   5. X25519 Derive           (both directions, verified equal)
+ *   6. HKDF-SHA-256            (ML-KEM ss ∥ X25519 ss → session key)
+ *   7. AES-256-GCM Encrypt     (1024-byte plaintext)
+ *   8. AES-256-GCM Decrypt     (verify round-trip)
+ *
+ * All secret material (sk, ss, x25519 shared secrets, session key) is
+ * zeroized before returning. keysMatch confirms that Alice and Bob
+ * derived identical session keys (cryptographic correctness signal).
+ *
+ * Used by runBenchmarkN() as the atomic unit of measurement; also callable
+ * stand-alone to confirm system correctness on a given device.
+ *
+ * @returns {Promise<{
+ *   keysMatch: boolean,
+ *   timing: {
+ *     mlkemKeyGenMs: number,
+ *     mlkemEncapsMs: number,
+ *     mlkemDecapsMs: number,
+ *     x25519ExchangeMs: number,
+ *     hkdfMs: number,
+ *     aesGcmEncryptMs: number,
+ *     aesGcmDecryptMs: number,
+ *     totalHandshakeMs: number
+ *   },
+ *   sizes: {
+ *     mlkemPublicKeyBytes: number,
+ *     mlkemSecretKeyBytes: number,
+ *     mlkemCiphertextBytes: number,
+ *     mlkemSharedSecretBytes: number,
+ *     sessionKeyBytes: number,
+ *     aesCiphertextBytes: number
+ *   }
+ * }>}
  */
 export async function runHandshake() {
     const hasX25519 = await checkX25519Support();
