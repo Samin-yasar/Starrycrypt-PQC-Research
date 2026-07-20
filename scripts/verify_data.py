@@ -1,5 +1,69 @@
 #!/usr/bin/env python3
-"""Pure Python verification of paper claims against telemetry data."""
+"""
+verify_data.py — Independent Pure-Python Verification of Paper Claims.
+
+OVERVIEW
+--------
+Reproduces the key numerical claims in the Starrycrypt PQC paper directly
+from the raw telemetry CSV using only the Python standard library (no
+numpy, pandas, or scipy). This design makes the script runnable by a
+reviewer or editor with a vanilla Python 3.8+ installation, enabling
+independent verification of the reported statistics.
+
+CLAIMS VERIFIED
+---------------
+  Overall performance:
+    - WASM mean and median total handshake latency
+    - Pure-JS mean and median total handshake latency
+    - WASM speedup ratio (mean and median)
+
+  SIMD vs. non-SIMD WASM:
+    - Session counts and mean/median for both groups
+    - Non-SIMD / SIMD latency ratio
+
+  Per-phase timing:
+    - KeyGen, Encaps, Decaps mean for both implementations
+
+  Browser engine:
+    - Per-engine (Blink, WebKit, Gecko) mean and median latency
+
+  Mobile vs. Desktop:
+    - Per device-type mean latency for WASM
+
+  Hardware tier:
+    - Budget / Mid-Range / Flagship mean latency (defined by baseline_mips)
+
+  Lab vs. Field:
+    - Session counts and per-group WASM/JS session counts
+
+  WASM feature availability:
+    - SIMD, Threads, Bulk Memory availability percentages
+
+  Non-SIMD breakdown:
+    - Individual session details for wasm_simd=False records
+
+  Chrome 87 outlier:
+    - Identification and latency value
+
+OUTLIER NOTE
+------------
+This script does NOT exclude the Chrome 87 outlier by default. The full
+dataset statistics are printed first. To reproduce the outlier-excluded
+numbers from the paper, filter the ``wasm`` list before computing stats
+(see the SIMD subgroup analysis in statistical_tests.py for guidance).
+
+USAGE
+-----
+    # Run from the repository root:
+    python3 scripts/verify_data.py
+
+Input:  performance_data/starrycrypt_telemetry_2026-05-05.csv
+Output: printed to stdout.
+
+DEPENDENCIES
+------------
+    Python >= 3.8 standard library only (csv, math).
+"""
 import csv
 import math
 
@@ -11,9 +75,18 @@ with open('performance_data/starrycrypt_telemetry_2026-05-05.csv', 'r') as f:
         data.append(row)
 
 def to_float(v):
+    """
+    Safely convert a CSV field value to float.
+
+    Args:
+        v: Value to convert (typically a string from csv.DictReader).
+
+    Returns:
+        float | None: Parsed float, or None if conversion fails.
+    """
     try:
         return float(v)
-    except:
+    except (TypeError, ValueError):
         return None
 
 # Filter implementations
@@ -26,6 +99,18 @@ print(f"Pure JS: {len(js)}")
 print()
 
 def stats(vals):
+    """
+    Compute (n, mean, median, population std, P95) for a list of floats.
+
+    None values are filtered out before computation.
+
+    Args:
+        vals (list): Numeric values (may contain None).
+
+    Returns:
+        tuple: (n, mean, median, std, p95) or (None, None, None, None, None)
+               if the filtered list is empty.
+    """
     vals = [v for v in vals if v is not None]
     if not vals:
         return None, None, None, None, None

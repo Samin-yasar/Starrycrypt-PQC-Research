@@ -1,7 +1,56 @@
 #!/usr/bin/env python3
 """
-Statistical Power Analysis for WASM vs JS Performance Comparison
-Addresses reviewer concerns M3, M4, and M5.
+statistical_power_analysis.py — Post-hoc Power, Effect Size, and Subgroup Analysis.
+
+OVERVIEW
+--------
+This script was written in response to reviewer comments M3, M4, and M5
+on the first submission. It performs three analyses:
+
+  M3 — POST-HOC POWER ANALYSIS (Section 5.1 revision)
+       Computes:
+         - Cohen's d effect size (pooled std formulation)
+         - Post-hoc statistical power using the non-central t-distribution
+         - Required sample size for 80% power at the observed effect size
+         - Bonferroni-corrected significance threshold for multiple comparisons
+         - Type I error risk discussion for the marginal p-value
+         - LaTeX-formatted output paragraph for the paper
+
+  M4 — SAFARI SIMD DETECTION PARADOX (Section 5.3 revision)
+       Analyses sessions where wasm_simd=False on Safari/WebKit and compares
+       their latency to SIMD-capable sessions. Quantifies the paradox
+       (Safari non-SIMD is *faster* than the SIMD group median) and provides
+       the mechanistic hypothesis (JavaScriptCore internal SIMD not exposed
+       to the browser feature-detection API).
+
+  M5 — OVERHEAD DECOMPOSITION METHODOLOGICAL ASSESSMENT (Section 5.2 revision)
+       Computes the implied non-ML-KEM overhead from per-phase timing data
+       and warns against presenting exact overhead percentages. Provides
+       recommended qualitative language for the paper.
+
+OUTLIER POLICY
+--------------
+Chrome 87 on macOS is excluded before all analyses via the ``is_c87`` mask,
+consistent with the rest of the analysis pipeline.
+
+USAGE
+-----
+    python3 analysis/statistical_power_analysis.py
+
+Input:  performance_data/starrycrypt_telemetry_2026-05-05.csv
+Output: printed to stdout; copy relevant values and LaTeX snippets into paper.
+
+DEPENDENCIES
+------------
+    pandas >= 1.3
+    numpy >= 1.21
+    scipy >= 1.7
+
+REFERENCES
+----------
+    Cohen, J. (1988). Statistical Power Analysis for the Behavioral Sciences.
+    Welch, B. L. (1947). Biometrika, 34(1-2), 28-35.
+    Holm, S. (1979). Scandinavian Journal of Statistics, 6(2), 65-70.
 """
 
 import pandas as pd
@@ -68,16 +117,33 @@ print()
 # Using the observed effect size and sample sizes
 def calculate_power(n1, n2, d, alpha=0.05):
     """
-    Calculate post-hoc power for two-sample t-test.
-    Uses non-central t-distribution approximation.
+    Calculate post-hoc statistical power for a two-sample t-test.
+
+    Uses the non-central t-distribution with non-centrality parameter:
+        ncp = d * sqrt(n1 * n2 / (n1 + n2))
+
+    Power is computed as P(|T| > t_crit | NCP = ncp), where t_crit is the
+    two-tailed critical value at the given alpha level.
+
+    Args:
+        n1    (int):   Sample size for group 1.
+        n2    (int):   Sample size for group 2.
+        d     (float): Cohen's d effect size (absolute value).
+        alpha (float): Type I error rate (default 0.05).
+
+    Returns:
+        float: Statistical power (1 - beta), in [0, 1].
+
+    References:
+        Cohen, J. (1988). Statistical Power Analysis, 2nd ed., §2.4.
     """
     # Non-centrality parameter
     ncp = d * np.sqrt(n1 * n2 / (n1 + n2))
-    
+
     # Critical t-value (two-tailed)
     df = n1 + n2 - 2
     t_crit = stats.t.ppf(1 - alpha/2, df)
-    
+
     # Power = P(reject H0 | H1 true)
     # = P(|T| > t_crit | non-central t with ncp)
     power = 1 - stats.nct.cdf(t_crit, df, ncp) + stats.nct.cdf(-t_crit, df, ncp)
@@ -106,9 +172,26 @@ print()
 
 # Sample size needed for 80% power
 def calculate_required_n(d, alpha=0.05, power=0.8):
-    """Calculate required sample size per group for two-sample t-test."""
+    """
+    Calculate the required per-group sample size for a two-sample t-test.
+
+    Uses the normal approximation (large-n formula):
+        n = 2 * ((z_alpha + z_beta) / d)^2
+
+    This slightly underestimates the true required n for small samples
+    (compared to the exact non-central t approach), but is accurate for
+    n > 20 and d >= 0.2. The result is rounded up to the nearest integer.
+
+    Args:
+        d     (float): Cohen's d effect size (absolute value).
+        alpha (float): Type I error rate (default 0.05).
+        power (float): Desired statistical power (default 0.80).
+
+    Returns:
+        int: Required sample size per group (ceiling of the formula).
+    """
     z_alpha = stats.norm.ppf(1 - alpha/2)
-    z_beta = stats.norm.ppf(power)
+    z_beta  = stats.norm.ppf(power)
     n = 2 * ((z_alpha + z_beta) / d) ** 2
     return int(np.ceil(n))
 

@@ -1,10 +1,57 @@
 #!/usr/bin/env python3
 """
-StarryCrypt-PQC — IEEE Publication-Quality Figure Generator
-=============================================================
-Generates figures from telemetry CSV for the research paper.
-All figures are styled for IEEE conference B&W compatibility
-with hatching, proper axis limits, and no redundant titles.
+generate_figures.py — IEEE Publication-Quality Figure Generator.
+
+OVERVIEW
+--------
+Generates all eight publication figures for the Starrycrypt PQC paper
+from the collected telemetry CSV. Figures are styled to meet IEEE ICASSP /
+IEEE S&P conference formatting requirements:
+
+  - Times New Roman 10 pt body font (falls back to DejaVu Serif).
+  - 300 DPI raster output + vector PDF output for each figure.
+  - Black-and-white compatible hatching (///, ..., xxx) on all filled
+    regions so the paper prints correctly in greyscale.
+  - No colour-only information encoding (colour is additive only).
+  - No chart titles (IEEE style: caption below figure in LaTeX, not in figure).
+
+FIGURES
+-------
+  Fig 1 — Constant-Time t-Test Screening (simulated Welch t-statistic scatter
+           across three JS engine families with ±4.5 detection threshold).
+  Fig 2 — WASM vs. Pure-JS Box Plot (log-scale total handshake latency).
+  Fig 3 — Per-Phase Timing Breakdown (stacked bar: KeyGen, Encaps, Decaps).
+  Fig 4 — Hardware Tier Grouped Bars (Budget / Mid-Range / Flagship ± 95% CI).
+  Fig 5 — WebAssembly Feature Availability (SIMD, Threads, Bulk Memory %).
+  Fig 6 — Browser Engine Box Plot (WebKit, Blink, Gecko; log scale).
+  Fig 7 — Mobile vs. Desktop Grouped Bars (± 95% CI per implementation).
+  Fig 8 — Latency vs. MIPS Scatter (log–log; both implementations overlaid).
+
+OUTLIER EXCLUSION
+-----------------
+Chrome 87 on macOS is excluded via the ``is_c87`` mask in ``main()`` before
+any figure is rendered, consistent with the outlier policy described in the
+paper (Section 5.1) and verified by ``statistical_tests.py``.
+
+USAGE
+-----
+    python3 analysis/generate_figures.py
+
+Output figures are written to ``analysis/figures/`` as both ``.pdf`` and
+``.png``. Run from the repository root so that the relative path to
+``performance_data/`` resolves correctly.
+
+DEPENDENCIES
+------------
+    numpy >= 1.21
+    pandas >= 1.3
+    matplotlib >= 3.5
+    scipy >= 1.7
+
+REFERENCES
+----------
+    IEEE Author Center — "Preparing Graphics for IEEE Journals," 2023.
+    https://ieeeauthorcenter.ieee.org/create-your-ieee-article/ieee-editorial-style-manual/
 """
 
 import os
@@ -48,21 +95,59 @@ OUTPUT_DIR = os.path.join(os.path.dirname(__file__), 'figures')
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 def save(fig, name):
+    """
+    Save a matplotlib figure as both PDF (vector) and PNG (raster, 300 DPI).
+
+    PDF is the primary submission artefact; PNG is provided for quick review
+    and the repository README. Both are written to ``analysis/figures/``.
+
+    Args:
+        fig  (Figure): Matplotlib figure object to save.
+        name (str):    Base filename without extension (e.g. ``'fig1_ct_ttest'``).
+    """
     fig.savefig(os.path.join(OUTPUT_DIR, f'{name}.pdf'), bbox_inches='tight')
     fig.savefig(os.path.join(OUTPUT_DIR, f'{name}.png'), bbox_inches='tight')
-    print(f'  ✓ {name}.pdf / .png')
+    print(f'  Saved: {name}.pdf / .png')
     plt.close(fig)
 
+
 def ci95(series):
+    """
+    Compute the half-width of a 95% confidence interval for a pandas Series.
+
+    Uses the Student t-distribution with (n-1) degrees of freedom, giving
+    an exact interval for normally distributed data of any sample size.
+
+    Args:
+        series (pd.Series): Sample data.
+
+    Returns:
+        float: CI half-width. Returns 0 if n < 2.
+    """
     n = len(series)
-    if n < 2: return 0
+    if n < 2:
+        return 0
     return stats.t.ppf(0.975, n - 1) * series.std() / np.sqrt(n)
 
+
 def find_data_file():
+    """
+    Locate the most recent telemetry CSV in ``performance_data/``.
+
+    Searches for files matching ``starrycrypt_telemetry_*.csv`` and
+    returns the lexicographically last (i.e., most recent by date suffix).
+
+    Returns:
+        str: Absolute path to the most recent telemetry CSV.
+
+    Raises:
+        SystemExit: If no matching file is found.
+    """
     pattern = os.path.join(os.path.dirname(__file__), '..', 'performance_data', 'starrycrypt_telemetry_*.csv')
     files = sorted(glob.glob(pattern))
     if not files:
-        print('ERROR: No telemetry CSV found')
+        print('ERROR: No telemetry CSV found in performance_data/. '
+              'Expected: starrycrypt_telemetry_<date>.csv')
         sys.exit(1)
     return files[-1]
 
@@ -70,6 +155,20 @@ def find_data_file():
 #  Figure 1 — Constant-Time t-Test Screening
 # ═════════════════════════════════════════════════════════════════════════════
 def fig1_ct_ttest():
+    """
+    Figure 1 — Constant-Time Welch t-Test Screening Across JS Engines.
+
+    Displays simulated Welch t-statistic distributions for three JS engines
+    (Blink/Chrome, WebKit/Safari, Gecko/Firefox) as a jitter scatter with
+    per-engine mean diamonds. A horizontal dashed line marks the |t| = 4.5
+    detection threshold. Data points within the shaded band indicate no
+    statistically significant timing difference between valid and
+    corrupted-ciphertext decapsulation (FO rejection path passes the test).
+
+    Note: t-values are drawn from a t-distribution (df=198) calibrated to
+    match the empirical spread from verifyConstantTimeRejection() in
+    mlkem768-wrapper.js. Actual measured t-values are reported in the text.
+    """
     print('[Fig 1] Constant-time t-test...')
     np.random.seed(42)
     engines = ['Blink\n(Chrome)', 'WebKit\n(Safari)', 'Gecko\n(Firefox)']
@@ -97,6 +196,17 @@ def fig1_ct_ttest():
 #  Figure 2 — WASM vs. Pure JS Box Plot
 # ═════════════════════════════════════════════════════════════════════════════
 def fig2_boxplot_wasm_vs_js(df):
+    """
+    Figure 2 — WASM vs. Pure-JS Total Handshake Latency Box Plot.
+
+    Log-scaled box plot comparing the total handshake latency distributions
+    for the WASM (Emscripten/PQClean) and Pure-JS (@noble/post-quantum)
+    implementations. The log scale is necessary because both distributions
+    are right-skewed; the arithmetic mean is inflated by outlier devices.
+
+    Args:
+        df (pd.DataFrame): Cleaned telemetry DataFrame (outliers excluded).
+    """
     print('[Fig 2] WASM vs. Pure JS box plot...')
     wasm = df[df['implementation'] == 'wasm']['total_handshake_mean'].dropna()
     js   = df[df['implementation'] == 'pure-js']['total_handshake_mean'].dropna()
@@ -116,6 +226,19 @@ def fig2_boxplot_wasm_vs_js(df):
 #  Figure 3 — Per-Phase Timing Breakdown
 # ═════════════════════════════════════════════════════════════════════════════
 def fig3_timing_breakdown(df):
+    """
+    Figure 3 — Per-Phase Timing Breakdown (Stacked Bar).
+
+    Stacked bar chart showing the mean contribution of each ML-KEM-768 phase
+    (KeyGen, Encaps, Decaps) to the total handshake latency for both
+    implementations. Each phase uses a distinct hatch pattern for B&W
+    compatibility. Note that the bars represent only the ML-KEM phases;
+    X25519, HKDF, and AES-GCM overhead is shown implicitly as the gap
+    between the stacked total and the total handshake latency in Fig 2.
+
+    Args:
+        df (pd.DataFrame): Cleaned telemetry DataFrame (outliers excluded).
+    """
     print('[Fig 3] Timing breakdown...')
     cols    = ['mlkem_keygen_mean', 'mlkem_encaps_mean', 'mlkem_decaps_mean']
     labels  = ['KeyGen', 'Encaps', 'Decaps']
@@ -137,6 +260,17 @@ def fig3_timing_breakdown(df):
 #  Figure 4 — Hardware Tier Bars
 # ═════════════════════════════════════════════════════════════════════════════
 def fig4_hardware_tier_bars(df):
+    """
+    Figure 4 — Latency by Hardware Tier (Grouped Bar ± 95% CI).
+
+    Grouped bars with 95% CI error caps showing mean handshake latency for
+    three hardware tiers (Budget < 150 MIPS, Mid-Range 150-400 MIPS,
+    Flagship > 400 MIPS) for both implementations side by side. The tier
+    boundaries are defined in main() via ``device_tier``.
+
+    Args:
+        df (pd.DataFrame): Cleaned telemetry DataFrame with ``device_tier`` column.
+    """
     print('[Fig 4] Hardware tier bars...')
     tier_order = ['Budget', 'Mid-Range', 'Flagship']
     impls  = ['wasm', 'pure-js']
@@ -160,6 +294,20 @@ def fig4_hardware_tier_bars(df):
 #  Figure 5 — WASM Capabilities
 # ═════════════════════════════════════════════════════════════════════════════
 def fig5_wasm_capabilities(df):
+    """
+    Figure 5 — WebAssembly Feature Availability Across Session Devices.
+
+    Bar chart showing the percentage of WASM-implementation sessions that
+    reported each WASM feature flag (SIMD, Threads, Bulk Memory) as
+    supported. Rates are computed over all WASM sessions in ``df``.
+
+    Design note: The Safari non-SIMD paradox (Safari reporting no SIMD yet
+    performing faster than many SIMD-capable devices) is discussed in the
+    paper's Section 5.3 and the Fig 5 caption, not shown here graphically.
+
+    Args:
+        df (pd.DataFrame): Cleaned telemetry DataFrame (outliers excluded).
+    """
     print('[Fig 5] WASM capabilities...')
     features = ['wasm_simd', 'wasm_threads', 'wasm_bulk_memory']
     feat_labels = ['SIMD', 'Threads', 'Bulk Memory']
@@ -175,6 +323,17 @@ def fig5_wasm_capabilities(df):
 #  Figure 6 — Browser Engine
 # ═════════════════════════════════════════════════════════════════════════════
 def fig6_browser_engine(df):
+    """
+    Figure 6 — WASM Latency by JS Engine (Box Plot, Log Scale).
+
+    Compares total handshake latency distributions across three JS engines —
+    WebKit (Safari), Blink (Chrome/Edge/Brave), and Gecko (Firefox) — for
+    WASM-implementation sessions. The engine is inferred from browser_name
+    using a simple mapping; unknown browsers are excluded.
+
+    Args:
+        df (pd.DataFrame): Cleaned telemetry DataFrame (outliers excluded).
+    """
     print('[Fig 6] Browser engine...')
     engine_map = {'Safari': 'WebKit', 'Chrome': 'Blink', 'Firefox': 'Gecko', 'Google Chrome': 'Blink'}
     wasm = df[df['implementation'] == 'wasm'].copy()
@@ -193,6 +352,17 @@ def fig6_browser_engine(df):
 #  Figure 7 — Mobile vs Desktop
 # ═════════════════════════════════════════════════════════════════════════════
 def fig7_mobile_vs_desktop(df):
+    """
+    Figure 7 — Mobile vs. Desktop Latency Comparison (Grouped Bar ± 95% CI).
+
+    Grouped bars with 95% CI error caps comparing mean handshake latency for
+    mobile and desktop devices across both WASM and Pure-JS implementations.
+    Confirms the expected 2–4x mobile penalty and quantifies how much of it
+    is attributable to CPU speed (compare with Fig 4 MIPS tiers).
+
+    Args:
+        df (pd.DataFrame): Cleaned telemetry DataFrame (outliers excluded).
+    """
     print('[Fig 7] Mobile vs Desktop...')
     impls = ['wasm', 'pure-js']
     fig, ax = plt.subplots(figsize=(5, 4))
@@ -212,6 +382,19 @@ def fig7_mobile_vs_desktop(df):
 #  Figure 8 — Latency vs MIPS
 # ═════════════════════════════════════════════════════════════════════════════
 def fig8_latency_vs_mips(df):
+    """
+    Figure 8 — Latency vs. Baseline MIPS (Log–Log Scatter).
+
+    Log–log scatter plot of total handshake latency against the device's
+    baseline MIPS score (xorshift throughput, measured in mlkem768-wrapper.js
+    _measureBaselineMips()). Both axes use log scale to linearize the inverse
+    relationship. Points are coloured by implementation (WASM = blue,
+    Pure-JS = orange). A strong negative correlation confirms that MIPS is
+    a useful normalization factor for cross-device latency comparison.
+
+    Args:
+        df (pd.DataFrame): Cleaned telemetry DataFrame (outliers excluded).
+    """
     print('[Fig 8] Latency vs MIPS...')
     fig, ax = plt.subplots(figsize=(5.5, 4))
     for impl, color in [('wasm', WASM_COLOR), ('pure-js', JS_COLOR)]:

@@ -2,6 +2,60 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.2] - 2026-07-20
+
+### Added
+- Module-level docstrings for all Python analysis scripts (`statistical_tests.py`,
+  `generate_figures.py`, `statistical_power_analysis.py`,
+  `revision_analysis_corrected.py`, `scripts/verify_data.py`,
+  `scripts/explore_data.py`) documenting purpose, inputs, outputs, outlier
+  policy, dependencies, and bibliographic references.
+- Per-function docstrings (Google style) for all public Python functions across
+  the analysis pipeline, including `load_data`, `cohen_d`, `calculate_power`,
+  `calculate_required_n`, `ci95`, `welch_ttest`, `stats`, `to_float`,
+  `categorize_engine`, `save`, `find_data_file`, and all eight `fig*` generators.
+- Comprehensive Doxygen-style comments for all C source files:
+  - `kem.c`        — KEM public API (KeyGen, Encaps, Decaps) with FIPS 203 §6 cross-references
+  - `indcpa.c`     — IND-CPA encryption/decryption internals with NTT pipeline diagram
+  - `randombytes.c` — CSPRNG strategy (WASM `getRandomValues`, fallback), entropy hazards
+  - `reduce.c`     — Montgomery and Barrett reduction with full algebraic derivation
+  - `verify.c`     — Constant-time memory comparison with side-channel rationale
+  - `benchmark_api.c` — Timing-isolated benchmark WASM exports
+  - `params.h`     — FIPS 203 §4 parameter derivation with algebraic context
+  - `api.h`        — Public KEM API contract with size guarantees
+- Full JSDoc coverage for `mlkem768-wrapper.js`:
+  - Module-level architecture diagram (WASM loading, hybrid KEM design, memory safety, benchmarking)
+  - All private helpers: `_malloc`, `_free`, `_zeroize`, `heapWrite`, `heapRead`
+  - All exported KEM functions: `loadModule`, `mlkemKeyGen`, `mlkemEncaps`, `mlkemDecaps`
+  - Cryptographic primitives: `hkdfSha256`, `aesGcmEncrypt`, `aesGcmDecrypt`, `deriveSessionKey`
+  - Benchmark entry point: `runHandshake` with full return-type documentation
+- Full JSDoc coverage for `purejs-wrapper.js`:
+  - Module-level docstring explaining API compatibility and design rationale vs. WASM variant
+  - All functions including `loadModule` (no-op rationale), `mlkemEncaps`, `mlkemDecaps`,
+    `checkX25519Support`, `x25519KeyGen`, `x25519Derive`, `hkdfSha256`, `aesGcmEncrypt`,
+    `aesGcmDecrypt`, `deriveSessionKey`, `runHandshake`
+- Full JSDoc coverage for `telemetry.js`:
+  - Module-level docstring documenting architecture, privacy policy, and deprecation note
+  - `uploadBenchmark` with full parameter and return-value documentation
+  - `uploadBenchmarkDirect` marked `@deprecated` with migration guidance
+- Professional `Makefile` with:
+  - Section headers for WASM build, dev server, cleanup, and paper build phases
+  - Inline comments on every flag in `EMFLAGS` (`-O3`, `WASM=1`, `MODULARIZE`, etc.)
+  - Documented `EXPORTS` allowlist and `RT_METHODS` (Emscripten runtime helpers)
+  - LaTeX four-pass compilation sequence explained
+- Professional `CONTRIBUTING.md` with ten structured sections: project scope,
+  issue reporting matrix, development setup (prerequisites table, build steps),
+  branching/PR workflow, language-specific code style guides (C, JS, Python, Markdown),
+  PR checklist, contribution opportunity table, security disclosure procedure,
+  Conventional Commits convention with examples, and license agreement.
+
+### Changed
+- `kem.h` documentation upgraded with Doxygen `@file`, `@brief`, `@param`, `@return`
+  annotations and FIPS 203 §6 cross-references.
+- `wasm_export.c` file header rewritten with architecture overview, security
+  contract, and per-function documentation for all six exported WASM symbols.
+- `CONTRIBUTING.md` fully rewritten to professional research-artifact standard.
+
 ## [2.0.1] - 2026-05-10
 
 ### Changed
