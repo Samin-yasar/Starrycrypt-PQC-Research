@@ -1,6 +1,67 @@
 /**
- * ML-KEM-768 (FIPS 203) Hybrid Wrapper
- * Combines ML-KEM shared secret with X25519 using HKDF-SHA-256 (Web Crypto API)
+ * @file mlkem768-wrapper.js
+ * @module mlkem768-wrapper
+ * @description ML-KEM-768 (FIPS 203) WASM-backed Hybrid Key Exchange Wrapper.
+ *
+ * Provides the primary browser-side interface to the Emscripten-compiled
+ * ML-KEM-768 WebAssembly module, and combines it with X25519 Diffie-Hellman
+ * (via the Web Crypto API) to form a hybrid KEM following the
+ * X25519MLKEM768 construction defined in draft-ietf-tls-ecdhe-mlkem.
+ *
+ * ARCHITECTURE
+ * ------------
+ * Browser JS (this file)
+ *   └─ WASM heap management (mlkem_malloc / mlkem_free / mlkem_zeroize)
+ *   └─ ML-KEM-768 (mlkem_keypair / mlkem_enc / mlkem_dec)  ← wasm_export.c
+ *        └─ PQClean ML-KEM-768 clean reference (kem.c, indcpa.c, …)
+ *   └─ Web Crypto API (X25519, HKDF-SHA-256, AES-256-GCM)
+ *
+ * HYBRID KEM DESIGN (X25519MLKEM768)
+ * -----------------------------------
+ *   The combined shared secret is derived as:
+ *
+ *     combined = mlkem_ss || x25519_ss   (64 bytes, ML-KEM first)
+ *     session_key = HKDF-SHA-256(combined, salt="", info=CONTEXT_STRING)
+ *
+ *   Concatenation order follows draft-ietf-tls-ecdhe-mlkem-04 §4.3
+ *   (ML-KEM first). The HKDF info string provides application-level domain
+ *   separation per RFC 5869 §3.2.
+ *
+ *   Security rationale: X25519 protects against classical adversaries;
+ *   ML-KEM-768 protects against quantum adversaries. An attacker who breaks
+ *   only one of the two components learns nothing about the session key.
+ *
+ * WASM LOADING
+ * ------------
+ * The Emscripten build produces a "classic" (non-ES-module) JS file that
+ * sets window.MLKEMModule on load. A dynamic import() cannot be used because:
+ *   (a) Emscripten's classic mode has no .default export.
+ *   (b) document.currentScript is null inside ES modules, breaking the
+ *       Emscripten .wasm path derivation.
+ * Instead, loadModule() injects a <script> tag and awaits its onload event.
+ * Concurrent callers share a single in-flight Promise to avoid double-loading.
+ *
+ * MEMORY SAFETY
+ * -------------
+ * All secret material (sk, ss) is zeroized in the WASM heap via
+ * mlkem_zeroize() before mlkem_free(). Public keys and ciphertexts
+ * are NOT zeroized (not secret). JS-side Uint8Array copies of secrets
+ * are zeroized with .fill(0) once they are no longer needed.
+ * X25519 private keys are never exported from the Web Crypto opaque
+ * CryptoKey handle; the browser manages their memory.
+ *
+ * BENCHMARKING
+ * ------------
+ * runHandshake()   — one full keygen+encaps+decaps+X25519+HKDF+AES cycle.
+ * runBenchmarkN()  — N timed iterations with warm-up; returns IEEE-quality
+ *                   statistics (mean, stdDev, median, P5/P95/P99, min, max).
+ * selfTest()       — correctness check (shared-secret agreement + byte sizes).
+ * verifyConstantTimeRejection() — Welch t-test on valid vs. invalid
+ *                   ciphertext decapsulation timing (FO implicit rejection).
+ *
+ * @see docs/API.md for the full JavaScript API reference.
+ * @see src/wasm/wasm_export.c for the WASM export layer.
+ * @see NIST FIPS 203 (ML-KEM), RFC 8446 §4.2.8 (X25519), RFC 5869 (HKDF).
  */
 
 const MLKEM_PUBLICKEYBYTES = 1184;
@@ -11,7 +72,19 @@ const MLKEM_SSBYTES = 32;
 let Module = null;
 let moduleLoadPromise = null;
 
-/** Load the WASM module. Call once before any operations. */
+/**
+ * loadModule — initialize the ML-KEM-768 WASM module.
+ *
+ * Must be called once before any mlkem* operations. Subsequent calls are
+ * no-ops (returns the cached Module). Safe to call concurrently — all callers
+ * share a single in-flight initialization Promise.
+ *
+ * @param {string} [wasmUrl='./dist/mlkem768.js'] — URL to the Emscripten JS
+ *   glue file. The companion .wasm binary must reside in the same directory.
+ * @returns {Promise<EmscriptenModule>} The initialized WASM module object.
+ * @throws {Error} If the WASM script cannot be loaded or if the WASM heap
+ *   fails to initialize (e.g., the .wasm binary returns a 404).
+ */
 export async function loadModule(wasmUrl = './dist/mlkem768.js') {
     if (Module) return Module;
     // Cache the in-flight promise so concurrent callers all await the same
@@ -70,29 +143,84 @@ async function _doLoadModule(wasmUrl) {
     return mod;
 }
 
+/**
+ * _malloc — allocate n bytes in the WASM heap.
+ * @private
+ * @param {number} n — byte count.
+ * @returns {number} WASM heap pointer (integer offset into Module.HEAPU8).
+ */
 function _malloc(n) {
     if (!Module) throw new Error('WASM module not initialized');
     return Module.ccall('mlkem_malloc', 'number', ['number'], [n]);
 }
+
+/**
+ * _free — release a WASM heap buffer.
+ * CONTRACT: Call _zeroize(ptr, n) first for any buffer holding secret data.
+ * @private
+ * @param {number} ptr — WASM heap pointer returned by _malloc.
+ */
 function _free(ptr) {
     if (!Module) throw new Error('WASM module not initialized');
     Module.ccall('mlkem_free', null, ['number'], [ptr]);
 }
+
+/**
+ * _zeroize — securely overwrite n bytes at ptr with zeros (volatile write).
+ * Delegates to mlkem_zeroize in wasm_export.c which uses a volatile pointer
+ * to prevent the compiler from eliding the memset as dead-store elimination.
+ * @private
+ * @param {number} ptr — WASM heap pointer.
+ * @param {number} n   — byte count.
+ */
 function _zeroize(ptr, n) {
     if (!Module) throw new Error('WASM module not initialized');
     Module.ccall('mlkem_zeroize', null, ['number', 'number'], [ptr, n]);
 }
+
+/**
+ * heapWrite — copy a Uint8Array from JS into the WASM linear memory.
+ * @private
+ * @param {Uint8Array} src — source array.
+ * @param {number}     ptr — destination WASM heap pointer.
+ * @param {number}     len — expected byte length (mismatch throws).
+ */
 function heapWrite(src, ptr, len) {
     if (!Module) throw new Error('WASM module not initialized');
     if (src.length !== len) throw new Error(`heapWrite: src.length (${src.length}) !== expected len (${len})`);
     Module.writeArrayToMemory(src, ptr);
 }
+
+/**
+ * heapRead — copy n bytes from the WASM linear memory into a new Uint8Array.
+ * The .slice() call ensures the returned array is a copy; mutations do not
+ * affect the WASM heap.
+ * @private
+ * @param {number} ptr — source WASM heap pointer.
+ * @param {number} len — byte count to copy.
+ * @returns {Uint8Array} A new copy of the heap bytes.
+ */
 function heapRead(ptr, len) {
     if (!Module || !Module.HEAPU8) throw new Error('WASM heap not initialized');
     return new Uint8Array(Module.HEAPU8.buffer, ptr, len).slice();
 }
 
-/** Generate ML-KEM-768 keypair. Returns {pk, sk, timeMs}. */
+/**
+ * mlkemKeyGen — ML-KEM-768 key pair generation (ML-KEM.KeyGen).
+ *
+ * Allocates pk (1184 bytes) and sk (2400 bytes) in the WASM heap, calls
+ * mlkem_keypair, copies both to JS Uint8Arrays, zeroizes sk in the heap
+ * before freeing, and returns the copies.
+ *
+ * SECURITY: The caller is responsible for zeroizing the returned sk with
+ * sk.fill(0) once it is no longer needed.
+ *
+ * @returns {Promise<{pk: Uint8Array, sk: Uint8Array, timeMs: number}>}
+ *   pk — 1184-byte public key.
+ *   sk — 2400-byte secret key (MUST be zeroized by caller after use).
+ *   timeMs — WASM execution time in milliseconds (performance.now() delta).
+ * @throws {Error} If mlkem_keypair returns non-zero (CSPRNG failure).
+ */
 export async function mlkemKeyGen() {
     const pkPtr = _malloc(MLKEM_PUBLICKEYBYTES);
     const skPtr = _malloc(MLKEM_SECRETKEYBYTES);
@@ -111,7 +239,20 @@ export async function mlkemKeyGen() {
     }
 }
 
-/** Encapsulate to a public key. Returns {ct, ss, timeMs}. */
+/**
+ * mlkemEncaps — ML-KEM-768 encapsulation (ML-KEM.Encaps).
+ *
+ * Generates a fresh ciphertext and shared secret for the given public key.
+ * Both ss (shared secret) and the input pk are zeroized in the heap before
+ * freeing. The returned ss MUST be zeroized by the caller after use.
+ *
+ * @param {Uint8Array} pk — 1184-byte ML-KEM-768 public key.
+ * @returns {Promise<{ct: Uint8Array, ss: Uint8Array, timeMs: number}>}
+ *   ct — 1088-byte ciphertext.
+ *   ss — 32-byte shared secret (MUST be zeroized by caller after use).
+ *   timeMs — WASM execution time in milliseconds.
+ * @throws {Error} If pk.length !== 1184, or if mlkem_enc returns non-zero.
+ */
 export async function mlkemEncaps(pk) {
     if (pk.length !== MLKEM_PUBLICKEYBYTES) throw new Error('Bad pk length');
     const ctPtr = _malloc(MLKEM_CIPHERTEXTBYTES);
@@ -135,7 +276,21 @@ export async function mlkemEncaps(pk) {
     }
 }
 
-/** Decapsulate with a secret key. Returns {ss, timeMs}. */
+/**
+ * mlkemDecaps — ML-KEM-768 decapsulation (ML-KEM.Decaps).
+ *
+ * Recovers the shared secret from the ciphertext using the secret key.
+ * If ct is invalid (modified or replayed), the Fujisaki-Okamoto implicit
+ * rejection mechanism returns a pseudo-random value; mlkem_dec never fails.
+ * Both ss and sk are zeroized in the heap before freeing.
+ *
+ * @param {Uint8Array} ct — 1088-byte ciphertext.
+ * @param {Uint8Array} sk — 2400-byte ML-KEM-768 secret key.
+ * @returns {Promise<{ss: Uint8Array, timeMs: number}>}
+ *   ss — 32-byte shared secret (MUST be zeroized by caller after use).
+ *   timeMs — WASM execution time in milliseconds.
+ * @throws {Error} If ct.length !== 1088 or sk.length !== 2400.
+ */
 export async function mlkemDecaps(ct, sk) {
     if (ct.length !== MLKEM_CIPHERTEXTBYTES) throw new Error('Bad ct length');
     if (sk.length !== MLKEM_SECRETKEYBYTES) throw new Error('Bad sk length');
@@ -199,7 +354,18 @@ export async function x25519Derive(privateKey, peerPublicKey) {
     return ss;
 }
 
-/** HKDF-SHA-256 via Web Crypto API. */
+/**
+ * hkdfSha256 — HKDF-SHA-256 key derivation (RFC 5869) via Web Crypto API.
+ *
+ * Extracts and expands ikm using HMAC-SHA-256. The salt and info parameters
+ * provide domain separation; see RFC 5869 §3.1–3.2 for guidance.
+ *
+ * @param {Uint8Array|ArrayBuffer} ikm    — Input key material.
+ * @param {Uint8Array|ArrayBuffer} salt   — Optional salt (use new Uint8Array(0) for no salt).
+ * @param {Uint8Array|ArrayBuffer} info   — Context/application-specific info string.
+ * @param {number}                 outLen — Output length in bytes (default 32).
+ * @returns {Promise<Uint8Array>} The derived key material.
+ */
 export async function hkdfSha256(ikm, salt, info, outLen = 32) {
     const base = await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits']);
     const bits = await crypto.subtle.deriveBits({
@@ -211,14 +377,29 @@ export async function hkdfSha256(ikm, salt, info, outLen = 32) {
     return new Uint8Array(bits);
 }
 
-/** AES-256-GCM encrypt via Web Crypto API. */
+/**
+ * aesGcmEncrypt — AES-256-GCM authenticated encryption via Web Crypto API.
+ *
+ * @param {Uint8Array} key       — 32-byte AES-256 key.
+ * @param {Uint8Array} plaintext — Plaintext to encrypt.
+ * @param {Uint8Array} iv        — 12-byte initialization vector (must be unique per key).
+ * @returns {Promise<Uint8Array>} Ciphertext + 16-byte authentication tag (concatenated).
+ */
 export async function aesGcmEncrypt(key, plaintext, iv) {
     const cryptoKey = await crypto.subtle.importKey('raw', key, 'AES-GCM', false, ['encrypt']);
     const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, cryptoKey, plaintext);
     return new Uint8Array(ciphertext);
 }
 
-/** AES-256-GCM decrypt via Web Crypto API. */
+/**
+ * aesGcmDecrypt — AES-256-GCM authenticated decryption via Web Crypto API.
+ *
+ * @param {Uint8Array} key        — 32-byte AES-256 key.
+ * @param {Uint8Array} ciphertext — Ciphertext + 16-byte auth tag.
+ * @param {Uint8Array} iv         — 12-byte initialization vector (same as used for encrypt).
+ * @returns {Promise<Uint8Array>} Plaintext.
+ * @throws {DOMException} If the authentication tag is invalid (ciphertext tampered).
+ */
 export async function aesGcmDecrypt(key, ciphertext, iv) {
     const cryptoKey = await crypto.subtle.importKey('raw', key, 'AES-GCM', false, ['decrypt']);
     const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, cryptoKey, ciphertext);
