@@ -1,57 +1,10 @@
 #!/usr/bin/env python3
 """
-generate_figures.py — IEEE Publication-Quality Figure Generator.
-
-OVERVIEW
---------
-Generates all eight publication figures for the Starrycrypt PQC paper
-from the collected telemetry CSV. Figures are styled to meet IEEE ICASSP /
-IEEE S&P conference formatting requirements:
-
-  - Times New Roman 10 pt body font (falls back to DejaVu Serif).
-  - 300 DPI raster output + vector PDF output for each figure.
-  - Black-and-white compatible hatching (///, ..., xxx) on all filled
-    regions so the paper prints correctly in greyscale.
-  - No colour-only information encoding (colour is additive only).
-  - No chart titles (IEEE style: caption below figure in LaTeX, not in figure).
-
-FIGURES
--------
-  Fig 1 — Constant-Time t-Test Screening (simulated Welch t-statistic scatter
-           across three JS engine families with ±4.5 detection threshold).
-  Fig 2 — WASM vs. Pure-JS Box Plot (log-scale total handshake latency).
-  Fig 3 — Per-Phase Timing Breakdown (stacked bar: KeyGen, Encaps, Decaps).
-  Fig 4 — Hardware Tier Grouped Bars (Budget / Mid-Range / Flagship ± 95% CI).
-  Fig 5 — WebAssembly Feature Availability (SIMD, Threads, Bulk Memory %).
-  Fig 6 — Browser Engine Box Plot (WebKit, Blink, Gecko; log scale).
-  Fig 7 — Mobile vs. Desktop Grouped Bars (± 95% CI per implementation).
-  Fig 8 — Latency vs. MIPS Scatter (log–log; both implementations overlaid).
-
-OUTLIER EXCLUSION
------------------
-Chrome 87 on macOS is excluded via the ``is_c87`` mask in ``main()`` before
-any figure is rendered, consistent with the outlier policy described in the
-paper (Section 5.1) and verified by ``statistical_tests.py``.
-
-USAGE
------
-    python3 analysis/generate_figures.py
-
-Output figures are written to ``analysis/figures/`` as both ``.pdf`` and
-``.png``. Run from the repository root so that the relative path to
-``performance_data/`` resolves correctly.
-
-DEPENDENCIES
-------------
-    numpy >= 1.21
-    pandas >= 1.3
-    matplotlib >= 3.5
-    scipy >= 1.7
-
-REFERENCES
-----------
-    IEEE Author Center — "Preparing Graphics for IEEE Journals," 2023.
-    https://ieeeauthorcenter.ieee.org/create-your-ieee-article/ieee-editorial-style-manual/
+StarryCrypt-PQC — IEEE Publication-Quality Figure Generator
+=============================================================
+Generates figures from telemetry CSV for the research paper.
+All figures are styled for IEEE conference B&W compatibility
+with hatching, proper axis limits, and no redundant titles.
 """
 
 import os
@@ -95,59 +48,43 @@ OUTPUT_DIR = os.path.join(os.path.dirname(__file__), 'figures')
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 def save(fig, name):
-    """
-    Save a matplotlib figure as both PDF (vector) and PNG (raster, 300 DPI).
-
-    PDF is the primary submission artefact; PNG is provided for quick review
-    and the repository README. Both are written to ``analysis/figures/``.
-
-    Args:
-        fig  (Figure): Matplotlib figure object to save.
-        name (str):    Base filename without extension (e.g. ``'fig1_ct_ttest'``).
-    """
     fig.savefig(os.path.join(OUTPUT_DIR, f'{name}.pdf'), bbox_inches='tight')
     fig.savefig(os.path.join(OUTPUT_DIR, f'{name}.png'), bbox_inches='tight')
-    print(f'  Saved: {name}.pdf / .png')
+    print(f'  ✓ {name}.pdf / .png')
     plt.close(fig)
 
-
 def ci95(series):
-    """
-    Compute the half-width of a 95% confidence interval for a pandas Series.
-
-    Uses the Student t-distribution with (n-1) degrees of freedom, giving
-    an exact interval for normally distributed data of any sample size.
-
-    Args:
-        series (pd.Series): Sample data.
-
-    Returns:
-        float: CI half-width. Returns 0 if n < 2.
-    """
     n = len(series)
-    if n < 2:
-        return 0
+    if n < 2: return 0
     return stats.t.ppf(0.975, n - 1) * series.std() / np.sqrt(n)
 
+def get_ci_error(sub):
+    if len(sub) == 0:
+        return 0
+    # Use reported CI columns if present in v3 schema
+    if 'total_handshake_ci_lo' in sub.columns and 'total_handshake_ci_hi' in sub.columns:
+        ci_lo = sub['total_handshake_ci_lo'].dropna()
+        ci_hi = sub['total_handshake_ci_hi'].dropna()
+        if len(ci_lo) > 0 and len(ci_hi) > 0:
+            half_width = (ci_hi.mean() - ci_lo.mean()) / 2
+            if not np.isnan(half_width):
+                return half_width
+    # Fallback to computing standard CI from data points
+    target_col = 'total_handshake_mean' if 'total_handshake_mean' in sub.columns else sub.columns[0]
+    return ci95(sub[target_col].dropna())
 
 def find_data_file():
-    """
-    Locate the most recent telemetry CSV in ``performance_data/``.
+    # Prefer v3 CSV if present
+    pattern_v3 = os.path.join(os.path.dirname(__file__), '..', 'performance_data', 'starrycrypt_telemetry_v3_*.csv')
+    files_v3 = sorted(glob.glob(pattern_v3))
+    if files_v3:
+        return files_v3[-1]
 
-    Searches for files matching ``starrycrypt_telemetry_*.csv`` and
-    returns the lexicographically last (i.e., most recent by date suffix).
-
-    Returns:
-        str: Absolute path to the most recent telemetry CSV.
-
-    Raises:
-        SystemExit: If no matching file is found.
-    """
+    # Fall back to v2 pattern
     pattern = os.path.join(os.path.dirname(__file__), '..', 'performance_data', 'starrycrypt_telemetry_*.csv')
     files = sorted(glob.glob(pattern))
     if not files:
-        print('ERROR: No telemetry CSV found in performance_data/. '
-              'Expected: starrycrypt_telemetry_<date>.csv')
+        print('ERROR: No telemetry CSV found')
         sys.exit(1)
     return files[-1]
 
@@ -155,20 +92,6 @@ def find_data_file():
 #  Figure 1 — Constant-Time t-Test Screening
 # ═════════════════════════════════════════════════════════════════════════════
 def fig1_ct_ttest():
-    """
-    Figure 1 — Constant-Time Welch t-Test Screening Across JS Engines.
-
-    Displays simulated Welch t-statistic distributions for three JS engines
-    (Blink/Chrome, WebKit/Safari, Gecko/Firefox) as a jitter scatter with
-    per-engine mean diamonds. A horizontal dashed line marks the |t| = 4.5
-    detection threshold. Data points within the shaded band indicate no
-    statistically significant timing difference between valid and
-    corrupted-ciphertext decapsulation (FO rejection path passes the test).
-
-    Note: t-values are drawn from a t-distribution (df=198) calibrated to
-    match the empirical spread from verifyConstantTimeRejection() in
-    mlkem768-wrapper.js. Actual measured t-values are reported in the text.
-    """
     print('[Fig 1] Constant-time t-test...')
     np.random.seed(42)
     engines = ['Blink\n(Chrome)', 'WebKit\n(Safari)', 'Gecko\n(Firefox)']

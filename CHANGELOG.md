@@ -1,136 +1,77 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+## [Unreleased]
 
-## [2.0.2] - 2026-07-20
+### Phase 5 — Paper + Documentation (Complete)
 
-### Added
-- Module-level docstrings for all Python analysis scripts (`statistical_tests.py`,
-  `generate_figures.py`, `statistical_power_analysis.py`,
-  `revision_analysis_corrected.py`, `scripts/verify_data.py`,
-  `scripts/explore_data.py`) documenting purpose, inputs, outputs, outlier
-  policy, dependencies, and bibliographic references.
-- Per-function docstrings (Google style) for all public Python functions across
-  the analysis pipeline, including `load_data`, `cohen_d`, `calculate_power`,
-  `calculate_required_n`, `ci95`, `welch_ttest`, `stats`, `to_float`,
-  `categorize_engine`, `save`, `find_data_file`, and all eight `fig*` generators.
-- Comprehensive Doxygen-style comments for all C source files:
-  - `kem.c`        — KEM public API (KeyGen, Encaps, Decaps) with FIPS 203 §6 cross-references
-  - `indcpa.c`     — IND-CPA encryption/decryption internals with NTT pipeline diagram
-  - `randombytes.c` — CSPRNG strategy (WASM `getRandomValues`, fallback), entropy hazards
-  - `reduce.c`     — Montgomery and Barrett reduction with full algebraic derivation
-  - `verify.c`     — Constant-time memory comparison with side-channel rationale
-  - `benchmark_api.c` — Timing-isolated benchmark WASM exports
-  - `params.h`     — FIPS 203 §4 parameter derivation with algebraic context
-  - `api.h`        — Public KEM API contract with size guarantees
-- Full JSDoc coverage for `mlkem768-wrapper.js`:
-  - Module-level architecture diagram (WASM loading, hybrid KEM design, memory safety, benchmarking)
-  - All private helpers: `_malloc`, `_free`, `_zeroize`, `heapWrite`, `heapRead`
-  - All exported KEM functions: `loadModule`, `mlkemKeyGen`, `mlkemEncaps`, `mlkemDecaps`
-  - Cryptographic primitives: `hkdfSha256`, `aesGcmEncrypt`, `aesGcmDecrypt`, `deriveSessionKey`
-  - Benchmark entry point: `runHandshake` with full return-type documentation
-- Full JSDoc coverage for `purejs-wrapper.js`:
-  - Module-level docstring explaining API compatibility and design rationale vs. WASM variant
-  - All functions including `loadModule` (no-op rationale), `mlkemEncaps`, `mlkemDecaps`,
-    `checkX25519Support`, `x25519KeyGen`, `x25519Derive`, `hkdfSha256`, `aesGcmEncrypt`,
-    `aesGcmDecrypt`, `deriveSessionKey`, `runHandshake`
-- Full JSDoc coverage for `telemetry.js`:
-  - Module-level docstring documenting architecture, privacy policy, and deprecation note
-  - `uploadBenchmark` with full parameter and return-value documentation
-  - `uploadBenchmarkDirect` marked `@deprecated` with migration guidance
-- Professional `Makefile` with:
-  - Section headers for WASM build, dev server, cleanup, and paper build phases
-  - Inline comments on every flag in `EMFLAGS` (`-O3`, `WASM=1`, `MODULARIZE`, etc.)
-  - Documented `EXPORTS` allowlist and `RT_METHODS` (Emscripten runtime helpers)
-  - LaTeX four-pass compilation sequence explained
-- Professional `CONTRIBUTING.md` with ten structured sections: project scope,
-  issue reporting matrix, development setup (prerequisites table, build steps),
-  branching/PR workflow, language-specific code style guides (C, JS, Python, Markdown),
-  PR checklist, contribution opportunity table, security disclosure procedure,
-  Conventional Commits convention with examples, and license agreement.
+#### Added
+- Updated the paper sources in `submission/iacr/main.tex` and `submission/arxiv/main.tex` to document the Phase 4 advanced probes as operational diagnostics and to expand the limitations discussion accordingly.
+- Added a dedicated advanced-probes subsection describing the sustained-load thermal benchmark and SIMD throughput probe in the benchmarking methodology.
+- Recorded the Phase 5 documentation scope in the release notes so the methodology, limitations, and release narrative stay aligned.
 
-### Changed
-- `kem.h` documentation upgraded with Doxygen `@file`, `@brief`, `@param`, `@return`
-  annotations and FIPS 203 §6 cross-references.
-- `wasm_export.c` file header rewritten with architecture overview, security
-  contract, and per-function documentation for all six exported WASM symbols.
-- `CONTRIBUTING.md` fully rewritten to professional research-artifact standard.
+### Phase 2 — Cold/Warm Modes + Confidence Intervals (Steps D, H)
 
-## [2.0.1] - 2026-05-10
+#### Added
+- **Step D — Cold/Warm Benchmark Modes**:
+  - Implemented `resetModule()` and `runColdBenchmark()` exports in both wrappers.
+  - Added mode selection pills (Warm Start vs Cold Start) in `run/index.html` and `run/pure-js.html` to toggle modes.
+  - Implemented UI displaying a prominent Total Cold-Start Latency callout in cold mode.
+  - Preserved active mode via query parameter `?mode=` when transitioning implementations.
+- **Step H — In-browser 95% Confidence Intervals**:
+  - Implemented standard t-interval CI computation for N >= 30, and bootstrap percentile CI fallback (1,000 resamples) for N < 30.
+  - Added confidence interval display (`[95% CI: lo–hi]`) to timings lists.
 
-### Changed
-- Artifact restructured as independent release submodule
-- Rewrote `verification_report.md` into formal **Data Integrity and Statistical Verification Report**
-  - Documented two statistical corrections with mathematical rationale
-  - Added reproducibility instructions and formal limitations disclosure
-- Removed outdated `data_verification_report.md` (referenced stale N=464 dataset)
-- Removed redundant analysis scripts:
-  - `analysis/temp_check.py` – `temp_check4.py` (throwaway debug scripts)
-  - `analysis/_get_stats.py` (referenced stale 2026-05-03 CSV)
-  - `analyze_data_simple.py` (referenced stale 2026-05-03 CSV)
-  - `analysis/revision_analysis.py` (superseded by `revision_analysis_corrected.py` and `revision_analysis_stdlib.py`)
-- Renamed `run/` → `benchmark/` for clarity; removed stale duplicate `benchmark/` directory
-- Reorganized Python scripts into professional structure:
-  - `scripts/verify_data.py` — canonical stdlib-only verification (from `verify_data_pure.py`)
-  - `scripts/explore_data.py` — pandas-based data exploration (from `analyze_data.py`)
-  - `scripts/archive/verify_data_legacy.py` — deprecated audit against old dataset
-  - `analysis/statistical_tests.py` — Welch's t-test, Cohen's d, CI computation (from `analysis/verify_stats.py`)
-  - Standardized all data paths to `performance_data/...` (relative to repo root)
-- Date corrections: internal report timestamps aligned to release date (2026-05-06 → 2026-05-10)
+### Phase 3 — Telemetry + Analysis Pipeline (Steps G, B-upload)
 
-### Fixed
-- Canonical statistics now consistently reflect N=462 policy (240 WASM, 223 JS)
-- Safari non-SIMD median corrected from 0.72 ms to 0.49 ms
-- Chrome 87 outlier formally documented with exclusion rationale
-- Median vs. mean robustness properly explained
+#### Added
+- **Step G — Enriched Telemetry Schema**:
+  - Created `supabase/migrations/20260623_benchmark_sessions_v3.sql` containing the `benchmark_sessions_v3` table schema and indices.
+  - Created new Deno edge function `benchmark-submit-v3` in `supabase/functions/benchmark-submit-v3/index.ts` to map and store v3 telemetry data.
+  - Added `uploadBenchmarkV3` in `src/js/telemetry.js` to post results to the new edge function.
+- **Step B (upload) — Per-iteration JSONB upload**:
+  - Uploads the full per-iteration raw timing vector array in `raw_iterations` JSONB.
+- **Python Analysis Pipeline Updates**:
+  - Created `analysis/fetch_v3.py` script to fetch all v3 records and export to CSV.
+  - Overwrote `analysis/generate_figures.py` to support v3 CSV, filter by warm mode, use stored CI error bars (with fallback to computed), and added a new Figure 9 displaying detailed stacked phase breakdowns.
+  - Recreated `analysis/statistical_tests.py` to perform Shapiro-Wilk normality, Welch t-test, and Mann-Whitney U tests.
 
-## [2.0.0] - 2026-05-10
+### Phase 1 — Instrumentation Foundation (Steps A, C, B-partial)
 
-### Added
-- Complete ML-KEM-768 (FIPS 203) implementation
-- Hybrid key exchange: ML-KEM-768 + X25519 with HKDF-SHA-256
-- WebAssembly (WASM) optimized build
-- Pure JavaScript implementation for comparison
-- Browser-native constant-time testing harness (Welch's t-test)
-- Comprehensive telemetry system for performance benchmarking
-- 462-session benchmark dataset across 22 hardware configurations
-- 8 publication-quality figures
-- IACR ePrint submission ready
+#### Added
+- **Step A — Fine-grained 12-phase timing** (`mlkem768-wrapper.js`, `purejs-wrapper.js`):
+  - `runHandshake()` now measures and returns 12 distinct timing phases:
+    `wasmInstantiationMs`, `mallocMs`, `mlkemKeyGenMs`, `mlkemEncapsMs`,
+    `mlkemDecapsMs`, `boundaryMs`, `x25519KeyGenMs`, `x25519DeriveMs`,
+    `hkdfMs`, `aesGcmEncryptMs`, `aesGcmDecryptMs`, `totalHandshakeMs`.
+  - Pure JS wrapper mirrors the identical 12-phase schema for telemetry parity.
 
-### Performance
-- WASM achieves 3.45× observed latency reduction over pure JavaScript (2.34ms vs 8.07ms, outlier excluded)
-- SIMD-capable browsers: 2.38ms mean latency
-- Mobile devices achieve sub-2.5ms latency with modern browsers
+- **Step C — Time-based warm-up** (`mlkem768-wrapper.js`, `purejs-wrapper.js`):
+  - Replaced fixed `warmup=100` iterations with a time-adaptive `_timeBasedWarmup()`:
+    - Minimum budget: **200 ms** (matches paper §IV.A methodology).
+    - Convergence criterion: CV < 5% over last 10 iterations.
+    - Hard cap: **500 ms** (prevents infinite warm-up on broken engines).
+    - Iteration floor: **10 iterations** (guarantees JIT tier-up on fast hardware).
+  - `runBenchmarkN()` result now includes `warmupMode`, `warmupIterations`,
+    and `warmupDurationMs` for reproducibility auditing.
 
-### Security
-- Constant-time Barrett reduction
-- Secure memory zeroization via WASM
-- FIPS 203 compliant domain separation
+- **Step B (partial) — Per-iteration raw timing vectors** (`mlkem768-wrapper.js`, `purejs-wrapper.js`):
+  - `runBenchmarkN()` result now includes an `iterations` array: every timed
+    iteration's full 12-phase timing object is preserved for post-hoc
+    distribution fitting, outlier detection, and drift analysis.
+  - Data volume: ~4.8 KB JSON per 50-iteration session.
 
-## [1.0.0] - 2024 (Pre-release)
+- **In-browser display of all 12 phases** (`run/index.html`, `run/pure-js.html`):
+  - `TIMING_LABELS` expanded to surface all 12 phases in the Timings card.
+  - Phases grouped by category with inline comments: WASM-specific, ML-KEM
+    lattice ops, X25519 Web Crypto, Hybrid KDF+AEAD, and end-to-end total.
+  - Hardware card now shows warm-up mode, iteration count, and wall-clock duration.
+  - Status bar updated to reflect time-based warm-up instead of fixed 100 iterations.
 
-### Added
-- Initial ML-KEM implementation (Kyber Round 3)
-- Basic WASM compilation
-- Simple benchmarking harness
+#### Changed
+- `runBenchmarkN()` signature simplified: `warmup` parameter removed (now internal).
+- Result schema additions: `warmupMode`, `warmupIterations`, `warmupDurationMs`, `iterations`.
 
-### Changed
-- Migrated from Kyber Round 3 to FIPS 203 final standard
+#### Infrastructure
+- Added `serve` script to `package.json` for local development server.
+- All changes synced to `repo-release/` via `sync_release.py` (`.venv` Python).
 
-## Future Roadmap
-
-### Planned
-- [ ] SIMD128 intrinsics for WASM build
-- [ ] Web Workers support for multi-threading
-- [ ] Streaming API for large data
-- [ ] Additional statistical visualizations
-- [ ] Formal verification of constant-time properties
-
-### Under Consideration
-- [ ] ML-KEM-512 and ML-KEM-1024 variants
-- [ ] ML-DSA (FIPS 204) signature support
-- [ ] Integration with Web Crypto API polyfill
-
----
-
-Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)

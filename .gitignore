@@ -48,8 +48,7 @@ __pycache__/
 venv/
 .venv/
 
-# NOTE: dist/ is intentionally NOT ignored.
-# The compiled mlkem768.js + mlkem768.wasm are committed so Vercel
-# can serve them without a build step. Recompile with `make` after
-# any C source changes and commit the updated dist/.
+pqclean/
+# Ignore compiled distribution artifacts for a lean release; rebuild with `make all`.
+dist/
 pqclean/

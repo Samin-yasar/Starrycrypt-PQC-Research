@@ -1,142 +1,110 @@
 #!/usr/bin/env python3
 """
-statistical_tests.py — WASM vs. Pure-JS Welch's t-test, Cohen's d, and CI.
-
-OVERVIEW
---------
-Loads the primary telemetry CSV, partitions it into WASM and Pure-JS
-subgroups (with and without the Chrome 87 / macOS outlier), and computes
-the core statistical tests reported in Section 5.1 of the paper:
-
-  - Descriptive statistics (n, mean, std) for both implementations.
-  - Welch's t-test (unequal-variance two-sample t-test) for the difference
-    in total handshake latency means.
-  - Cohen's d effect size (pooled standard deviation formulation) for both
-    the full and outlier-excluded datasets.
-  - 95% confidence intervals using the Student t-distribution (df = n - 1).
-
-OUTLIER POLICY
---------------
-Chrome 87 on macOS is excluded in the "without C87" analysis because it
-exhibited anomalously high latency (~23x the WASM group median) attributed
-to a WASM JIT regression present in that specific browser-OS combination.
-The outlier was identified prior to analysis via Grubbs' test (G = 4.82,
-p < 0.01). Both with- and without-outlier results are reported in the paper
-for full transparency.
-
-USAGE
------
-    python3 analysis/statistical_tests.py
-
-Input:  performance_data/starrycrypt_telemetry_<date>.csv
-Output: printed to stdout; copy relevant values into the paper tables.
-
-DEPENDENCIES
-------------
-    numpy >= 1.21
-    scipy >= 1.7
-
-REFERENCES
-----------
-    Welch, B. L. (1947). The generalization of 'Student's' problem when
-        several different population variances are involved.
-        Biometrika, 34(1-2), 28-35.
-    Cohen, J. (1988). Statistical Power Analysis for the Behavioral Sciences
-        (2nd ed.). Hillsdale, NJ: Lawrence Erlbaum Associates.
+StarryCrypt-PQC — Hypothesis Testing & Statistical Analysis
+=============================================================
+Performs statistical tests on telemetry data to compare WASM and Pure JS.
+- Shapiro-Wilk normality check on total handshake latency
+- Welch's t-test (unequal variances t-test)
+- Mann-Whitney U test (non-parametric rank-sum test)
+- Structured report generation for paper §IV.C
 """
 
-import csv
+import os
+import sys
+import glob
 import numpy as np
+import pandas as pd
 from scipy import stats
-import math
 
+def find_data_file():
+    # Prefer v3 CSV if present
+    pattern_v3 = os.path.join(os.path.dirname(__file__), '..', 'performance_data', 'starrycrypt_telemetry_v3_*.csv')
+    files_v3 = sorted(glob.glob(pattern_v3))
+    if files_v3:
+        return files_v3[-1]
 
-def load_data(filepath):
-    """
-    Load telemetry CSV and cast numeric fields.
+    # Fall back to v2 pattern
+    pattern = os.path.join(os.path.dirname(__file__), '..', 'performance_data', 'starrycrypt_telemetry_*.csv')
+    files = sorted(glob.glob(pattern))
+    if not files:
+        print('ERROR: No telemetry CSV found')
+        sys.exit(1)
+    return files[-1]
 
-    Args:
-        filepath (str): Path to the telemetry CSV file.
+def run_tests():
+    data_file = find_data_file()
+    print(f"Loading telemetry file for analysis: {data_file}")
+    df = pd.read_csv(data_file)
 
-    Returns:
-        list[dict]: List of row dicts with ``total_handshake_mean`` cast
-        to float (defaulting to 0.0 on missing/invalid values).
-    """
-    rows = []
-    with open(filepath, 'r') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            for key in ['total_handshake_mean']:
-                try:
-                    row[key] = float(row[key]) if row[key] else 0.0
-                except:
-                    row[key] = 0.0
-            rows.append(row)
-    return rows
+    # Filter to warm benchmark mode if mode column is present
+    if 'benchmark_mode' in df.columns:
+        df = df[df['benchmark_mode'] == 'warm'].copy()
 
-rows = load_data('performance_data/starrycrypt_telemetry_2026-05-05.csv')
+    # Exclude Chrome 87 outlier per manuscript policy
+    is_c87 = (df['browser_name'] == 'Chrome') & (df['browser_version'].astype(str).str.startswith('87')) & (df['os_name'] == 'macOS')
+    df = df[~is_c87].copy()
 
-wasm_all = [r['total_handshake_mean'] for r in rows if r['implementation'] == 'wasm']
-wasm_no_c87 = [r['total_handshake_mean'] for r in rows if r['implementation'] == 'wasm' and not (r['browser_name'] == 'Chrome' and r['browser_version'].startswith('87') and r['os_name'] == 'macOS')]
-js_all = [r['total_handshake_mean'] for r in rows if r['implementation'] == 'pure-js']
+    wasm_latencies = df[df['implementation'] == 'wasm']['total_handshake_mean'].dropna()
+    js_latencies = df[df['implementation'] == 'pure-js']['total_handshake_mean'].dropna()
 
-# To numpy arrays
-w_all = np.array(wasm_all)
-w_no_c87 = np.array(wasm_no_c87)
-j_all = np.array(js_all)
+    n_wasm = len(wasm_latencies)
+    n_js = len(js_latencies)
 
-print(f"WASM (With C87) - n={len(w_all)}, mean={np.mean(w_all):.3f}, std (ddof=1)={np.std(w_all, ddof=1):.3f}")
-print(f"WASM (Without C87) - n={len(w_no_c87)}, mean={np.mean(w_no_c87):.3f}, std (ddof=1)={np.std(w_no_c87, ddof=1):.3f}")
-print(f"JS (All) - n={len(j_all)}, mean={np.mean(j_all):.3f}, std (ddof=1)={np.std(j_all, ddof=1):.3f}")
+    print(f"\nSample Sizes:")
+    print(f"  WASM (n={n_wasm}), Mean={wasm_latencies.mean():.4f} ms, StdDev={wasm_latencies.std():.4f} ms")
+    print(f"  Pure JS (n={n_js}), Mean={js_latencies.mean():.4f} ms, StdDev={js_latencies.std():.4f} ms")
 
-# Welch's t-test with Chrome 87
-t_stat_with, p_val_with = stats.ttest_ind(w_all, j_all, equal_var=False)
-print(f"\n--- With Chrome 87 ---")
-print(f"t-statistic: {t_stat_with:.3f}, p-value: {p_val_with:.6f}")
+    if n_wasm < 3 or n_js < 3:
+        print("\nERROR: Insufficient samples to run statistical tests (need at least 3 per group).")
+        return
 
-# Welch's t-test without Chrome 87
-t_stat_without, p_val_without = stats.ttest_ind(w_no_c87, j_all, equal_var=False)
-print(f"--- Without Chrome 87 ---")
-print(f"t-statistic: {t_stat_without:.3f}, p-value: {p_val_without:.6e}")
+    # 1. Shapiro-Wilk Normality Test
+    stat_w_wasm, p_w_wasm = stats.shapiro(wasm_latencies)
+    stat_w_js, p_w_js = stats.shapiro(js_latencies)
 
-# Cohen's d effect size ──────────────────────────────────────────────────────
-def cohen_d(x, y):
-    """
-    Compute Cohen's d using the pooled standard deviation estimator.
+    # 2. Welch's t-test (independent samples with unequal variance)
+    t_stat, t_pval = stats.ttest_ind(wasm_latencies, js_latencies, equal_var=False)
 
-    Cohen's d = (mean(x) - mean(y)) / s_pooled, where:
+    # 3. Mann-Whitney U test (non-parametric rank-sum test)
+    u_stat, u_pval = stats.mannwhitneyu(wasm_latencies, js_latencies, alternative='two-sided')
 
-        s_pooled = sqrt( ((n1-1)*s1^2 + (n2-1)*s2^2) / (n1+n2-2) )
+    # Output structured report
+    print("\n" + "="*60)
+    print(" STATISTICAL ANALYSIS REPORT (§IV.C COMPATIBLE)")
+    print("="*60)
+    
+    print("\n1. Shapiro-Wilk Normality Check:")
+    print(f"  WASM:    W = {stat_w_wasm:.4f}, p = {p_w_wasm:.4e}")
+    print(f"  Pure JS: W = {stat_w_js:.4f}, p = {p_w_js:.4e}")
+    if p_w_wasm < 0.05 or p_w_js < 0.05:
+        print("  Interpretation: Reject null hypothesis of normality (p < 0.05).")
+        print("                  Data shows significant non-normality (skew/outliers).")
+    else:
+        print("  Interpretation: Fail to reject null hypothesis of normality (p >= 0.05).")
+        print("                  Data is approximately normally distributed.")
 
-    Note: A negative d means group y has the larger mean (y is slower).
+    print("\n2. Welch's t-test (Parametric, Unequal Variance):")
+    print(f"  t-statistic = {t_stat:.4f}")
+    print(f"  p-value     = {t_pval:.4e}")
+    if t_pval < 0.05:
+        print("  Interpretation: Statistically significant difference in means (p < 0.05).")
+        speedup = js_latencies.mean() / wasm_latencies.mean()
+        print(f"                  WASM is on average {speedup:.2f}x faster than Pure JS.")
+    else:
+        print("  Interpretation: No statistically significant difference in means (p >= 0.05).")
 
-    Args:
-        x (array-like): First group of observations.
-        y (array-like): Second group of observations.
+    print("\n3. Mann-Whitney U test (Non-parametric Rank-sum):")
+    print(f"  U-statistic = {u_stat:.4f}")
+    print(f"  p-value     = {u_pval:.4e}")
+    if u_pval < 0.05:
+        print("  Interpretation: Statistically significant difference in distributions (p < 0.05).")
+    else:
+        print("  Interpretation: No statistically significant difference in distributions (p >= 0.05).")
 
-    Returns:
-        float: Cohen's d effect size (signed; positive when mean(x) > mean(y)).
+    print("\n" + "="*60)
+    print("END OF REPORT")
+    print("="*60)
 
-    References:
-        Cohen, J. (1988). Statistical Power Analysis, 2nd ed., §2.2.
-    """
-    nx = len(x)
-    ny = len(y)
-    dof = nx + ny - 2
-    return (np.mean(x) - np.mean(y)) / math.sqrt(((nx-1)*np.std(x, ddof=1)**2 + (ny-1)*np.std(y, ddof=1)**2) / dof)
-
-d_with = abs(cohen_d(w_all, j_all))
-d_without = abs(cohen_d(w_no_c87, j_all))
-
-print(f"\nCohen's d (With C87): {d_with:.3f}")
-print(f"Cohen's d (Without C87): {d_without:.3f}")
-
-# Confidence Intervals (95%)
-w_no_c87_margin = stats.t.ppf(0.975, len(w_no_c87)-1) * (np.std(w_no_c87, ddof=1) / math.sqrt(len(w_no_c87)))
-w_no_c87_ci = (np.mean(w_no_c87) - w_no_c87_margin, np.mean(w_no_c87) + w_no_c87_margin)
-print(f"\nWASM (Without C87) 95% CI: [{w_no_c87_ci[0]:.2f}, {w_no_c87_ci[1]:.2f}]")
-
-j_margin = stats.t.ppf(0.975, len(j_all)-1) * (np.std(j_all, ddof=1) / math.sqrt(len(j_all)))
-j_ci = (np.mean(j_all) - j_margin, np.mean(j_all) + j_margin)
-print(f"JS 95% CI: [{j_ci[0]:.2f}, {j_ci[1]:.2f}]")
+if __name__ == "__main__":
+    run_tests()
 
